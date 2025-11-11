@@ -1,0 +1,6 @@
+# Ignore node_modules inside the workspace subfolders
+/backend/node_modules/
+/raved/node_modules/
+
+# Optional: ignore root node_modules if present
+node_modules/
