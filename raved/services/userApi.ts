@@ -134,7 +134,7 @@ export const userApi = {
 
   // Rankings/leaderboard
   getRankings: async (type: 'weekly' | 'monthly' | 'all-time' = 'weekly', faculty?: string) => {
-    const response = await api.get('/users/rankings', { params: { type, faculty } });
+    const response = await api.get('/rankings', { params: { period: type, faculty } });
     return response.data;
   },
 
@@ -159,6 +159,32 @@ export const userApi = {
   // Get user saved posts
   getUserSavedPosts: async (userId: string, page = 1, limit = 20) => {
     const response = await api.get(`/users/${userId}/saved-posts`, { params: { page, limit } });
+    return response.data;
+  },
+
+  // Get user settings
+  getUserSettings: async () => {
+    const response = await api.get('/users/settings');
+    return response.data;
+  },
+
+  // Update user settings
+  updateUserSettings: async (settings: {
+    profileVisibility?: 'public' | 'connections' | 'private';
+    showOnlineStatus?: boolean;
+    allowMessages?: 'everyone' | 'connections' | 'none';
+    language?: string;
+    dateFormat?: string;
+    currency?: string;
+    timezone?: string;
+    isPrivate?: boolean;
+    readReceipts?: boolean;
+    allowDownloads?: boolean;
+    allowStorySharing?: boolean;
+    analytics?: boolean;
+    personalizedAds?: boolean;
+  }) => {
+    const response = await api.put('/users/settings', settings);
     return response.data;
   },
 };

@@ -19,6 +19,15 @@ router.put('/avatar', usersController.updateAvatar);
 // Get user stats
 router.get('/stats', usersController.getUserStats);
 
+// Get user connections (must be before /:userId route)
+router.get('/connections', usersController.getConnections);
+
+// Get user settings (must be before /:userId route)
+router.get('/settings', usersController.getUserSettings);
+
+// Update user settings (must be before /:userId route)
+router.put('/settings', usersController.updateUserSettings);
+
 // Get user by ID profile
 router.get('/:userId', usersController.getProfile);
 
@@ -36,6 +45,15 @@ router.get('/:userId/liked-posts', usersController.getUserLikedPosts);
 
 // Get user saved posts
 router.get('/:userId/saved-posts', usersController.getUserSavedPosts);
+
+// Get user connections (followers/following) by userId
+router.get('/:userId/connections', usersController.getConnections);
+
+// Follow user
+router.post('/:userId/follow', usersController.followUser);
+
+// Unfollow user
+router.delete('/:userId/follow', usersController.unfollowUser);
 
 export default router;
 

@@ -33,7 +33,13 @@ router.get('/:chatId', authenticate, async (req: Request, res: Response) => {
 
     res.json({
       success: true,
-      chat
+      chat: {
+        ...chat,
+        participants: [
+          { id: userId, name: req.user.first_name + ' ' + req.user.last_name, avatarUrl: req.user.avatar_url },
+          chat.otherParticipant
+        ]
+      }
     });
   } catch (error: any) {
     console.error('Get Chat Error:', error);

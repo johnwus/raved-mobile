@@ -16,7 +16,6 @@ import { Ionicons } from '@expo/vector-icons';
 import { theme } from '../../theme';
 import { Avatar } from '../../components/ui/Avatar';
 import { ErrorState } from '../../components/ui/ErrorState';
-import api from '../../services/api';
 import socketService from '../../services/socket';
 import { useAuth } from '../../hooks/useAuth';
 
@@ -59,13 +58,26 @@ export default function ChatDetailScreen() {
       if (!id || !user) return;
 
       try {
-        // Fetch chat details
-        const chatResponse = await api.get(`/chats/${id}`);
-        setChatParticipant(chatResponse.data.chat.otherParticipant);
+        // Fetch chat details and messages using chatApi
+        const chatApi = (await import('../../services/chatApi')).default;
+        const chatResponse = await chatApi.getChat(id);
+        if (chatResponse.success && chatResponse.chat) {
+          const otherParticipant = chatResponse.chat.participants?.find((p: any) => p.id !== user?.id) || 
+                                   chatResponse.chat.otherParticipant;
+          if (otherParticipant) {
+            setChatParticipant({
+              id: otherParticipant.id,
+              name: otherParticipant.name || `${otherParticipant.firstName || ''} ${otherParticipant.lastName || ''}`.trim(),
+              avatarUrl: otherParticipant.avatarUrl || otherParticipant.avatar || '',
+            });
+          }
+        }
 
         // Fetch messages
-        const messagesResponse = await api.get(`/chats/${id}/messages`);
-        setMessages(messagesResponse.data.messages);
+        const messagesResponse = await chatApi.getMessages(id, 1, 50);
+        if (messagesResponse.success && messagesResponse.messages) {
+          setMessages(messagesResponse.messages);
+        }
 
         // Connect to socket and join chat room
         await socketService.connect();
@@ -118,8 +130,7 @@ export default function ChatDetailScreen() {
     setSending(true);
 
     try {
-      // Use offline queue service for offline support
-      const { offlineQueueService } = await import('../../services/offlineQueue');
+      const chatApi = (await import('../../services/chatApi')).default;
       
       // Add optimistic message
       const tempMessage: Message = {
@@ -138,30 +149,27 @@ export default function ChatDetailScreen() {
       };
       setMessages(prev => [...prev, tempMessage]);
 
-      // Queue the message (will sync when online)
-      await offlineQueueService.queueRequest(
-        'POST',
-        `/chats/${id}/messages`,
-        {
-          content: messageText,
-          type: 'text'
-        },
-        {
-          priority: 10, // High priority for messages
-          tags: ['message', 'chat']
-        }
-      );
-
-      // If online, process immediately
-      if (offlineQueueService.isOnline) {
-        await offlineQueueService.processQueue();
+      // Send message using chatApi
+      const response = await chatApi.sendMessage(id, messageText, 'text');
+      if (response.success && response.message) {
+        // Replace temp message with real one
+        setMessages(prev => prev.map(m => 
+          m.id.startsWith('temp_') && m.content === messageText 
+            ? response.message 
+            : m
+        ));
+      } else {
+        // Remove optimistic message on error
+        setMessages(prev => prev.filter(m => !m.id.startsWith('temp_')));
+        setMessage(messageText); // Restore message text
+        Alert.alert('Error', 'Failed to send message');
       }
     } catch (error) {
       console.error('Failed to send message:', error);
       // Remove optimistic message on error
       setMessages(prev => prev.filter(m => !m.id.startsWith('temp_')));
       setMessage(messageText); // Restore message text
-      Alert.alert('Error', 'Failed to send message. It will be sent when you\'re back online.');
+      Alert.alert('Error', 'Failed to send message. Please try again.');
     } finally {
       setSending(false);
     }

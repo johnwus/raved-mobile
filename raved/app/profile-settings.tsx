@@ -14,6 +14,8 @@ import { theme } from '../theme';
 import { Toggle } from '../components/ui/Toggle';
 import { useAuth } from '../hooks/useAuth';
 import { useTheme } from '../contexts/ThemeContext';
+import { userApi } from '../services/userApi';
+import { useEffect } from 'react';
 
 export default function ProfileSettingsScreen() {
   const router = useRouter();
@@ -27,6 +29,75 @@ export default function ProfileSettingsScreen() {
   const [allowStorySharing, setAllowStorySharing] = useState(user?.allowStorySharing ?? true);
   const [analytics, setAnalytics] = useState(user?.analytics ?? true);
   const [personalizedAds, setPersonalizedAds] = useState(user?.personalizedAds ?? true);
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    const loadSettings = async () => {
+      try {
+        const response = await userApi.getUserSettings();
+        if (response.success && response.settings) {
+          const settings = response.settings;
+          setPrivateAccount(settings.isPrivate || false);
+          setShowActivity(settings.showOnlineStatus !== false);
+          setReadReceipts(settings.readReceipts !== false);
+          setAllowDownloads(settings.allowDownloads !== false);
+          setAllowStorySharing(settings.allowStorySharing !== false);
+          setAnalytics(settings.analytics !== false);
+          setPersonalizedAds(settings.personalizedAds !== false);
+        }
+      } catch (error) {
+        console.error('Failed to load settings:', error);
+      }
+    };
+    loadSettings();
+  }, []);
+
+  const updateSetting = async (key: string, value: any) => {
+    try {
+      setLoading(true);
+      await userApi.updateUserSettings({ [key]: value });
+    } catch (error) {
+      console.error(`Failed to update ${key}:`, error);
+      Alert.alert('Error', `Failed to update ${key}`);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handlePrivateAccountChange = async (value: boolean) => {
+    setPrivateAccount(value);
+    await updateSetting('isPrivate', value);
+  };
+
+  const handleShowActivityChange = async (value: boolean) => {
+    setShowActivity(value);
+    await updateSetting('showOnlineStatus', value);
+  };
+
+  const handleReadReceiptsChange = async (value: boolean) => {
+    setReadReceipts(value);
+    await updateSetting('readReceipts', value);
+  };
+
+  const handleAllowDownloadsChange = async (value: boolean) => {
+    setAllowDownloads(value);
+    await updateSetting('allowDownloads', value);
+  };
+
+  const handleAllowStorySharingChange = async (value: boolean) => {
+    setAllowStorySharing(value);
+    await updateSetting('allowStorySharing', value);
+  };
+
+  const handleAnalyticsChange = async (value: boolean) => {
+    setAnalytics(value);
+    await updateSetting('analytics', value);
+  };
+
+  const handlePersonalizedAdsChange = async (value: boolean) => {
+    setPersonalizedAds(value);
+    await updateSetting('personalizedAds', value);
+  };
 
   const handleSignOut = () => {
     Alert.alert(

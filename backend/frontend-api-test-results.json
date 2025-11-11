@@ -1,0 +1,216 @@
+{
+  "results": [
+    {
+      "name": "Auth - Login",
+      "success": true,
+      "status": 200,
+      "description": "Authenticated as admin user"
+    },
+    {
+      "name": "Auth - Refresh Token",
+      "success": true,
+      "status": 200
+    },
+    {
+      "name": "User - Profile",
+      "success": true,
+      "status": 200
+    },
+    {
+      "name": "Error",
+      "success": false,
+      "error": "GET /rankings?period=weekly failed with status 500: {\"success\":false,\"error\":\"Authentication service error\",\"message\":\"Please try again later\"}"
+    },
+    {
+      "name": "Posts - Feed",
+      "success": true,
+      "status": 200,
+      "description": "Retrieved 0 posts"
+    },
+    {
+      "name": "Posts - Trending",
+      "success": true,
+      "status": 200
+    },
+    {
+      "name": "Posts - Suggestions",
+      "success": true,
+      "status": 200
+    },
+    {
+      "name": "Faculties - List",
+      "success": true,
+      "status": 200,
+      "description": "Retrieved 7 faculties"
+    },
+    {
+      "name": "Faculties - Stats",
+      "success": true,
+      "status": 200
+    },
+    {
+      "name": "Events - List",
+      "success": true,
+      "status": 200,
+      "description": "Retrieved 6 events"
+    },
+    {
+      "name": "Events - Detail",
+      "success": true,
+      "status": 200
+    },
+    {
+      "name": "Events - Toggle Attendance",
+      "success": true,
+      "status": 200,
+      "description": "Attending flag toggled to undefined"
+    },
+    {
+      "name": "Notifications - List",
+      "success": true,
+      "status": 200,
+      "description": "Retrieved 0 notifications"
+    },
+    {
+      "name": "Notifications - Mark As Read",
+      "success": false,
+      "error": "No notification to mark as read"
+    },
+    {
+      "name": "Notifications - Mark All As Read",
+      "success": true,
+      "status": 200
+    },
+    {
+      "name": "Notifications - Preferences",
+      "success": true,
+      "status": 200
+    },
+    {
+      "name": "Notifications - Update Preferences",
+      "success": false,
+      "error": "PUT /notifications/preferences failed with status 400: {\"error\":\"Preferences object is required\"}"
+    },
+    {
+      "name": "Search - Advanced",
+      "success": true,
+      "status": 200
+    },
+    {
+      "name": "Store - Items",
+      "success": true,
+      "status": 200,
+      "description": "Retrieved 10 items"
+    },
+    {
+      "name": "Store - Item Detail",
+      "success": true,
+      "status": 200
+    },
+    {
+      "name": "Subscriptions - Plans",
+      "success": true,
+      "status": 200
+    },
+    {
+      "name": "Subscriptions - Status",
+      "success": true,
+      "status": 200
+    },
+    {
+      "name": "User - Posts",
+      "success": true,
+      "status": 200
+    },
+    {
+      "name": "User - Comments",
+      "success": true,
+      "status": 200
+    },
+    {
+      "name": "User - Liked Posts",
+      "success": true,
+      "status": 200
+    },
+    {
+      "name": "User - Saved Posts",
+      "success": true,
+      "status": 200
+    },
+    {
+      "name": "Analytics - User",
+      "success": true,
+      "status": 200
+    },
+    {
+      "name": "Analytics - Store",
+      "success": true,
+      "status": 200
+    },
+    {
+      "name": "Analytics - Track Event",
+      "success": true,
+      "status": 200
+    },
+    {
+      "name": "Notifications - Preferences (repeat)",
+      "success": true,
+      "status": 200
+    },
+    {
+      "name": "Stories - Get Stories",
+      "success": true,
+      "status": 200,
+      "description": "Retrieved 0 story groups"
+    },
+    {
+      "name": "Chats - Get Conversations",
+      "success": true,
+      "status": 200,
+      "description": "Retrieved 0 conversations"
+    },
+    {
+      "name": "Chats - Get Messages",
+      "success": false,
+      "error": "No conversation id available"
+    },
+    {
+      "name": "Connections - Get Connections",
+      "success": true,
+      "status": 200,
+      "description": "Following: 0, Followers: 0"
+    },
+    {
+      "name": "Connections - Get Pending Requests",
+      "success": true,
+      "status": 200,
+      "description": "Retrieved 0 pending requests"
+    },
+    {
+      "name": "Settings - Get User Settings",
+      "success": true,
+      "status": 200
+    },
+    {
+      "name": "Settings - Update User Settings",
+      "success": true,
+      "status": 200
+    },
+    {
+      "name": "Theme - Get User Theme",
+      "success": true,
+      "status": 200
+    },
+    {
+      "name": "Theme - Set Dark Mode",
+      "success": true,
+      "status": 200
+    },
+    {
+      "name": "Posts - Faculty Posts",
+      "success": false,
+      "error": "No faculty available for testing"
+    }
+  ],
+  "timestamp": "2025-11-11T20:44:26.075Z"
+}

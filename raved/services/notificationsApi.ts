@@ -85,7 +85,7 @@ export const notificationsApi = {
   updatePreferences: async (
     preferences: Partial<NotificationPreferences>
   ): Promise<{ success: boolean; preferences: NotificationPreferences }> => {
-    const response = await api.put('/notifications/preferences', preferences);
+    const response = await api.put('/notifications/preferences', { preferences });
     return response.data;
   },
 };

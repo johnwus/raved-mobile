@@ -57,12 +57,16 @@ export default function FacultiesScreen() {
 
   useEffect(() => {
     if (selectedFaculty) {
-      loadFacultyData(selectedFaculty);
+      // Use faculty.id (slug format) for API calls
+      const faculty = faculties.find(f => f.id === selectedFaculty || f.name === selectedFaculty);
+      if (faculty) {
+        loadFacultyData(faculty.id); // Use slug format
+      }
     } else {
       setFacultyStats(null);
       setFacultyPosts([]);
     }
-  }, [selectedFaculty]);
+  }, [selectedFaculty, faculties]);
 
   const loadFaculties = async () => {
     try {

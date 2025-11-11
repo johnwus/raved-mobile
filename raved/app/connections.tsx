@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -6,6 +6,7 @@ import {
   TouchableOpacity,
   StyleSheet,
   FlatList,
+  Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
@@ -14,58 +15,30 @@ import { theme } from '../theme';
 import { Button } from '../components/ui/Button';
 import { Avatar } from '../components/ui/Avatar';
 import { EmptyState } from '../components/ui/EmptyState';
-import { mockUsers } from '../utils/mockData';
+import { userApi } from '../services/userApi';
+import { connectionsApi } from '../services/connectionsApi';
+import { useAuth } from '../hooks/useAuth';
 
 type ConnectionType = 'all' | 'following' | 'followers' | 'requests' | 'suggested';
 
 interface Connection {
   id: string;
-  user: typeof mockUsers[0];
+  user: {
+    id: string;
+    username: string;
+    firstName: string;
+    lastName: string;
+    name: string;
+    avatarUrl?: string;
+    avatar?: string;
+    faculty: string;
+  };
   type: 'following' | 'follower' | 'mutual' | 'pending' | 'suggested';
+  isMutual?: boolean;
+  isFollowing?: boolean;
   mutualFriends?: number;
   reason?: string;
 }
-
-const mockConnections: Connection[] = [
-  {
-    id: 'c1',
-    user: mockUsers[0],
-    type: 'following',
-    mutualFriends: 12,
-  },
-  {
-    id: 'c2',
-    user: mockUsers[1],
-    type: 'follower',
-    mutualFriends: 8,
-  },
-  {
-    id: 'c3',
-    user: mockUsers[2],
-    type: 'mutual',
-    mutualFriends: 20,
-  },
-  {
-    id: 'c4',
-    user: mockUsers[3],
-    type: 'pending',
-    mutualFriends: 7,
-  },
-  {
-    id: 'c5',
-    user: mockUsers[4],
-    type: 'suggested',
-    mutualFriends: 25,
-    reason: 'Same faculty',
-  },
-  {
-    id: 'c6',
-    user: mockUsers[5],
-    type: 'suggested',
-    mutualFriends: 15,
-    reason: 'Mutual friends',
-  },
-];
 
 const connectionFilters: { id: ConnectionType; label: string }[] = [
   { id: 'all', label: 'All' },
@@ -77,16 +50,182 @@ const connectionFilters: { id: ConnectionType; label: string }[] = [
 
 export default function ConnectionsScreen() {
   const router = useRouter();
+  const { user } = useAuth();
   const [activeFilter, setActiveFilter] = useState<ConnectionType>('all');
+  const [connections, setConnections] = useState<Connection[]>([]);
+  const [pendingRequests, setPendingRequests] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
 
-  const filteredConnections = mockConnections.filter(conn => {
+  useEffect(() => {
+    const fetchConnections = async () => {
+      try {
+        setLoading(true);
+        const type = activeFilter === 'following' ? 'following' : activeFilter === 'followers' ? 'followers' : 'all';
+        const response = await userApi.getConnections(undefined, type);
+        
+        if (response.success) {
+          const allConnections: Connection[] = [];
+          
+          // Add following
+          if (response.following) {
+            response.following.forEach((conn: any) => {
+              allConnections.push({
+                id: conn.id,
+                user: {
+                  id: conn.id,
+                  username: conn.username,
+                  firstName: conn.firstName,
+                  lastName: conn.lastName,
+                  name: conn.name,
+                  avatarUrl: conn.avatarUrl,
+                  avatar: conn.avatarUrl,
+                  faculty: conn.faculty || '',
+                },
+                type: 'following',
+                isMutual: conn.isMutual,
+                isFollowing: true,
+              });
+            });
+          }
+          
+          // Add followers
+          if (response.followers) {
+            response.followers.forEach((conn: any) => {
+              allConnections.push({
+                id: conn.id,
+                user: {
+                  id: conn.id,
+                  username: conn.username,
+                  firstName: conn.firstName,
+                  lastName: conn.lastName,
+                  name: conn.name,
+                  avatarUrl: conn.avatarUrl,
+                  avatar: conn.avatarUrl,
+                  faculty: conn.faculty || '',
+                },
+                type: conn.isMutual ? 'mutual' : 'follower',
+                isMutual: conn.isMutual,
+                isFollowing: conn.isFollowing,
+              });
+            });
+          }
+          
+          setConnections(allConnections);
+        }
+
+        // Fetch pending requests
+        if (activeFilter === 'requests' || activeFilter === 'all') {
+          try {
+            const requestsResponse = await connectionsApi.getPendingFollowRequests();
+            if (requestsResponse.success && requestsResponse.requests) {
+              setPendingRequests(requestsResponse.requests);
+              // Add pending requests to connections
+              requestsResponse.requests.forEach((req: any) => {
+                setConnections(prev => [...prev, {
+                  id: req.id || req.request_id,
+                  user: {
+                    id: req.id,
+                    username: req.username,
+                    firstName: req.first_name || req.firstName,
+                    lastName: req.last_name || req.lastName,
+                    name: `${req.first_name || req.firstName} ${req.last_name || req.lastName}`,
+                    avatarUrl: req.avatar_url || req.avatarUrl,
+                    avatar: req.avatar_url || req.avatarUrl,
+                    faculty: req.faculty || '',
+                  },
+                  type: 'pending',
+                }]);
+              });
+            }
+          } catch (error) {
+            console.error('Failed to fetch pending requests:', error);
+          }
+        }
+      } catch (error) {
+        console.error('Failed to fetch connections:', error);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    if (user) {
+      fetchConnections();
+    }
+  }, [activeFilter, user]);
+
+  const filteredConnections = connections.filter(conn => {
     if (activeFilter === 'all') return true;
     if (activeFilter === 'requests') return conn.type === 'pending';
     if (activeFilter === 'suggested') return conn.type === 'suggested';
     return conn.type === activeFilter;
   });
 
-  const totalConnections = mockConnections.length;
+  const totalConnections = connections.length;
+
+  const handleFollow = async (userId: string) => {
+    try {
+      await userApi.followUser(userId);
+      // Refresh connections
+      const response = await userApi.getConnections(undefined, activeFilter === 'following' ? 'following' : 'all');
+      if (response.success) {
+        // Update connections state
+        setConnections(prev => prev.map(conn => 
+          conn.user.id === userId ? { ...conn, type: 'following' as const, isFollowing: true } : conn
+        ));
+      }
+    } catch (error) {
+      console.error('Failed to follow user:', error);
+      Alert.alert('Error', 'Failed to follow user');
+    }
+  };
+
+  const handleUnfollow = async (userId: string) => {
+    try {
+      await userApi.unfollowUser(userId);
+      // Remove from connections
+      setConnections(prev => prev.filter(conn => conn.user.id !== userId));
+    } catch (error) {
+      console.error('Failed to unfollow user:', error);
+      Alert.alert('Error', 'Failed to unfollow user');
+    }
+  };
+
+  const handleAcceptRequest = async (requestId: string) => {
+    try {
+      await connectionsApi.approveFollowRequest(requestId);
+      // Remove from pending and add to connections
+      setPendingRequests(prev => prev.filter(req => (req.id || req.request_id) !== requestId));
+      setConnections(prev => prev.filter(conn => conn.id !== requestId));
+    } catch (error) {
+      console.error('Failed to accept request:', error);
+      Alert.alert('Error', 'Failed to accept follow request');
+    }
+  };
+
+  const handleRejectRequest = async (requestId: string) => {
+    try {
+      await connectionsApi.rejectFollowRequest(requestId);
+      // Remove from pending
+      setPendingRequests(prev => prev.filter(req => (req.id || req.request_id) !== requestId));
+      setConnections(prev => prev.filter(conn => conn.id !== requestId));
+    } catch (error) {
+      console.error('Failed to reject request:', error);
+      Alert.alert('Error', 'Failed to reject follow request');
+    }
+  };
+
+  const handleStartChat = async (userId: string) => {
+    try {
+      const chatApi = (await import('../services/chatApi')).default;
+      const response = await chatApi.startChat(userId);
+      if (response.success && response.conversation) {
+        router.push(`/chat/${response.conversation.id}` as any);
+      }
+    } catch (error) {
+      console.error('Failed to start chat:', error);
+      Alert.alert('Error', 'Failed to start chat');
+    }
+  };
 
   const getActionButton = (connection: Connection) => {
     switch (connection.type) {
@@ -94,7 +233,7 @@ export default function ConnectionsScreen() {
         return (
           <Button
             title="Following"
-            onPress={() => {}}
+            onPress={() => handleUnfollow(connection.user.id)}
             variant="outline"
             size="small"
             style={styles.actionButton}
@@ -104,7 +243,7 @@ export default function ConnectionsScreen() {
         return (
           <Button
             title="Follow Back"
-            onPress={() => {}}
+            onPress={() => handleFollow(connection.user.id)}
             variant="primary"
             size="small"
             style={styles.actionButton}
@@ -114,10 +253,7 @@ export default function ConnectionsScreen() {
         return (
           <Button
             title="Message"
-            onPress={() => {
-              // Navigate to chat - in a real app, this would create/find a chat with this user
-              router.push('/chat' as any);
-            }}
+            onPress={() => handleStartChat(connection.user.id)}
             variant="primary"
             size="small"
             style={styles.actionButton}
@@ -128,14 +264,14 @@ export default function ConnectionsScreen() {
           <View style={styles.pendingActions}>
             <Button
               title="Accept"
-              onPress={() => {}}
+              onPress={() => handleAcceptRequest(connection.id)}
               variant="primary"
               size="small"
               style={styles.actionButton}
             />
             <Button
               title="Decline"
-              onPress={() => {}}
+              onPress={() => handleRejectRequest(connection.id)}
               variant="outline"
               size="small"
               style={styles.actionButton}
@@ -146,7 +282,7 @@ export default function ConnectionsScreen() {
         return (
           <Button
             title="Follow"
-            onPress={() => {}}
+            onPress={() => handleFollow(connection.user.id)}
             variant="primary"
             size="small"
             style={styles.actionButton}

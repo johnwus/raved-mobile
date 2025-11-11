@@ -890,9 +890,28 @@ export const getFacultyPosts = async (req: Request, res: Response) => {
         
         const skip = (page - 1) * limit;
         
-        // Get posts from MongoDB filtered by faculty
+        // First, get all user IDs with this faculty from PostgreSQL
+        const usersResult = await pgPool.query(
+            'SELECT id FROM users WHERE faculty = $1 AND deleted_at IS NULL',
+            [facultyName]
+        );
+        const facultyUserIds = usersResult.rows.map(r => r.id);
+        
+        if (facultyUserIds.length === 0) {
+            return res.json({
+                success: true,
+                posts: [],
+                pagination: {
+                    page,
+                    limit,
+                    hasMore: false
+                }
+            });
+        }
+        
+        // Get posts from MongoDB filtered by user IDs with this faculty
         const posts = await Post.find({
-            faculty: facultyName,
+            userId: { $in: facultyUserIds },
             deletedAt: null,
             $or: [
                 { visibility: 'public' },

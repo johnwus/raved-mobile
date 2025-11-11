@@ -7,7 +7,7 @@ export const facultiesController = {
     try {
       const result = await pgPool.query(`
         SELECT 
-          faculty,
+          u.faculty AS faculty,
           COUNT(DISTINCT u.id) as member_count,
           COUNT(DISTINCT p.id) as post_count,
           COUNT(DISTINCT e.id) as event_count
@@ -17,8 +17,8 @@ export const facultiesController = {
         WHERE u.faculty IS NOT NULL 
           AND u.faculty != ''
           AND u.deleted_at IS NULL
-        GROUP BY faculty
-        ORDER BY member_count DESC, faculty ASC
+        GROUP BY u.faculty
+        ORDER BY member_count DESC, u.faculty ASC
       `);
 
       const faculties = result.rows.map(row => ({
