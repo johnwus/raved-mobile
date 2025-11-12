@@ -2,8 +2,8 @@ import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { Post } from '../types';
 import { Storage } from '../services/storage';
-import postsApi from '../services/postsApi';
-import socketService from '../services/socket';
+import { postsApi } from '../services/postsApi';
+import { socketService } from '../services/socket';
 
 interface PostsState {
   posts: Post[];
@@ -12,13 +12,19 @@ interface PostsState {
   savedPosts: Set<string>;
   loading: boolean;
   error: string | null;
+  // pagination
+  currentPage: number;
+  hasMore: boolean;
+  limit: number;
+  // actions
   addPost: (post: Post) => void;
   likePost: (postId: string) => Promise<void>;
   unlikePost: (postId: string) => Promise<void>;
   savePost: (postId: string) => void;
   unsavePost: (postId: string) => void;
   setFeaturedPost: (postId: string) => void;
-  fetchFeed: () => Promise<void>;
+  fetchFeed: (page?: number) => Promise<void>;
+  fetchMore: () => Promise<void>;
   createPost: (postData: any) => Promise<Post | null>;
   setLoading: (loading: boolean) => void;
   setError: (error: string | null) => void;
@@ -34,6 +40,9 @@ export const usePostsStore = create<PostsState>()(
       savedPosts: new Set<string>(),
       loading: false,
       error: null,
+      currentPage: 0,
+      hasMore: true,
+      limit: 10,
 
       addPost: (post) => {
         set((state) => ({
@@ -81,20 +90,62 @@ export const usePostsStore = create<PostsState>()(
         }
       },
 
-      savePost: (postId) => {
-        set((state) => {
-          const newSaved = new Set(state.savedPosts);
-          newSaved.add(postId);
-          return { savedPosts: newSaved };
-        });
+      savePost: async (postId) => {
+        try {
+          await postsApi.savePost(postId);
+          set((state) => {
+            const newSaved = new Set(state.savedPosts);
+            newSaved.add(postId);
+            return {
+              savedPosts: newSaved,
+              posts: state.posts.map(p => p.id === postId ? { ...p, saved: true } : p)
+            };
+          });
+        } catch (error) {
+          console.warn('Save post failed, queueing for offline sync:', error);
+          // Optimistic update + enqueue
+          set((state) => ({
+            savedPosts: new Set([...state.savedPosts, postId]),
+            posts: state.posts.map(p => p.id === postId ? { ...p, saved: true } : p)
+          }));
+          try {
+            const { default: syncManager } = await import('../services/syncManager');
+            await syncManager.queueRequest('POST', `/posts/${postId}/save`);
+          } catch (e) {
+            console.error('Failed to queue save request:', e);
+          }
+        }
       },
 
-      unsavePost: (postId) => {
-        set((state) => {
-          const newSaved = new Set(state.savedPosts);
-          newSaved.delete(postId);
-          return { savedPosts: newSaved };
-        });
+      unsavePost: async (postId) => {
+        try {
+          await postsApi.unsavePost(postId);
+          set((state) => {
+            const newSaved = new Set(state.savedPosts);
+            newSaved.delete(postId);
+            return {
+              savedPosts: newSaved,
+              posts: state.posts.map(p => p.id === postId ? { ...p, saved: false } : p)
+            };
+          });
+        } catch (error) {
+          console.warn('Unsave post failed, queueing for offline sync:', error);
+          // Optimistic update + enqueue
+          set((state) => {
+            const newSaved = new Set(state.savedPosts);
+            newSaved.delete(postId);
+            return {
+              savedPosts: newSaved,
+              posts: state.posts.map(p => p.id === postId ? { ...p, saved: false } : p)
+            };
+          });
+          try {
+            const { default: syncManager } = await import('../services/syncManager');
+            await syncManager.queueRequest('DELETE', `/posts/${postId}/save`);
+          } catch (e) {
+            console.error('Failed to queue unsave request:', e);
+          }
+        }
       },
 
       setFeaturedPost: (postId) => {
@@ -104,18 +155,50 @@ export const usePostsStore = create<PostsState>()(
         }
       },
 
-      fetchFeed: async () => {
+      fetchFeed: async (page = 1) => {
         set({ loading: true, error: null });
         try {
-          const response = await postsApi.getFeed();
-          const posts = response.posts.map((post: any) => ({
+          const { limit } = get();
+          const response = await postsApi.getFeed(page, limit);
+          const posts = (response.posts || []).map((post: any) => ({
             ...post,
             liked: get().likedPosts.has(post.id),
             saved: get().savedPosts.has(post.id),
           }));
-          set({ posts, loading: false });
+          const hasMore = !!response.pagination?.hasMore && posts.length >= limit;
+          set({
+            posts,
+            featuredPost: posts[0] || null,
+            loading: false,
+            currentPage: page,
+            hasMore,
+          });
         } catch (error: any) {
           set({ error: error.message || 'Failed to fetch feed', loading: false });
+        }
+      },
+
+      fetchMore: async () => {
+        if (!get().hasMore || get().loading) return;
+        set({ loading: true });
+        try {
+          const nextPage = get().currentPage + 1;
+          const { limit } = get();
+          const response = await postsApi.getFeed(nextPage, limit);
+          const newPosts = (response.posts || []).map((post: any) => ({
+            ...post,
+            liked: get().likedPosts.has(post.id),
+            saved: get().savedPosts.has(post.id),
+          }));
+          const merged = [...get().posts];
+          newPosts.forEach((p: any) => {
+            if (!merged.find(mp => mp.id === p.id)) merged.push(p);
+          });
+          const hasMore = !!response.pagination?.hasMore && newPosts.length >= limit;
+          set({ posts: merged, currentPage: nextPage, hasMore, loading: false });
+        } catch (e: any) {
+          console.error('Fetch more failed', e);
+          set({ loading: false });
         }
       },
 

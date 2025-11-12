@@ -1,5 +1,5 @@
 import React, { useEffect, useRef } from 'react';
-import { View, Text, StyleSheet, Animated } from 'react-native';
+import { Text, StyleSheet, Animated } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { theme } from '../../theme';
 import { useTheme } from '../../contexts/ThemeContext';
@@ -60,7 +60,7 @@ export const Toast: React.FC<ToastProps> = ({
 
       return () => clearTimeout(timer);
     }
-  }, [visible, duration, onHide]);
+  }, [visible, duration, onHide, opacity, translateY]);
 
   if (!visible) return null;
 

@@ -476,23 +476,77 @@ export const usersController = {
     }
   },
 
-  // Get user saved posts (bookmarked)
+// Get user saved posts (bookmarked)
   getUserSavedPosts: async (req: Request, res: Response) => {
     try {
-      const { userId } = req.params;
+      const { userId } = req.params as any;
+      const targetUserId = userId || req.user.id;
       const page = parseInt(req.query.page as string) || 1;
       const limit = parseInt(req.query.limit as string) || 20;
       const skip = (page - 1) * limit;
 
-      // TODO: Implement saved posts/bookmarks collection
-      // For now, return empty array
+      const saved = await (await import('../models/mongoose')).SavedPost.find({ userId: targetUserId })
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(limit)
+        .lean();
+
+      const postIds = saved.map(s => s.postId);
+      if (postIds.length === 0) {
+        return res.json({ success: true, posts: [], pagination: { page, limit, hasMore: false } });
+      }
+
+      const posts = await (await import('../models/mongoose')).Post.find({
+        _id: { $in: postIds },
+        deletedAt: null
+      }).lean();
+
+      // Get user info for each post
+      const authorIds = [...new Set(posts.map(p => p.userId))];
+      const users = await pgPool.query(`
+        SELECT id, username, first_name, last_name, avatar_url, faculty
+        FROM users WHERE id = ANY($1)
+      `, [authorIds]);
+
+      const userMap: any = {};
+      users.rows.forEach(u => {
+        userMap[u.id] = {
+          id: u.id,
+          username: u.username,
+          name: `${u.first_name} ${u.last_name}`,
+          avatarUrl: u.avatar_url,
+          faculty: u.faculty
+        };
+      });
+
+      const enrichedPosts = posts.map(post => ({
+        id: post._id.toString(),
+        user: userMap[post.userId] || { id: post.userId, name: 'Unknown User' },
+        caption: post.caption || '',
+        media: {
+          type: post.type,
+          url: post.media?.image || post.media?.video,
+          thumbnail: post.media?.thumbnail,
+          items: post.media?.images || []
+        },
+        tags: post.tags || [],
+        likes: post.likesCount || 0,
+        comments: post.commentsCount || 0,
+        shares: post.sharesCount || 0,
+        timeAgo: getTimeAgo(post.createdAt),
+        liked: false,
+        saved: true,
+        forSale: post.isForSale,
+        price: post.saleDetails?.price,
+      }));
+
       res.json({
         success: true,
-        posts: [],
+        posts: enrichedPosts,
         pagination: {
           page,
           limit,
-          hasMore: false
+          hasMore: saved.length === limit
         }
       });
     } catch (error: any) {

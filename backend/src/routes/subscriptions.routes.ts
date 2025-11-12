@@ -13,5 +13,8 @@ router.get('/plans', subscriptionsController.getPlans);
 // Get user subscription status
 router.get('/status', subscriptionsController.getSubscriptionStatus);
 
+// Upgrade to premium (dev/mock)
+router.post('/upgrade', subscriptionsController.upgrade);
+
 export default router;
 

@@ -18,16 +18,16 @@ import { LoadingState } from '../../components/ui/LoadingState';
 import { ErrorState } from '../../components/ui/ErrorState';
 
 interface ThemeAnalytics {
-  themeDistribution: Array<{
+  themeDistribution: {
     theme_preference: string;
     count: number;
     dark_mode_users: number;
     light_mode_users: number;
-  }>;
-  dailyChanges: Array<{
+  }[];
+  dailyChanges: {
     date: string;
     changes: number;
-  }>;
+  }[];
   period: string;
 }
 
@@ -35,10 +35,10 @@ interface ThemeUsageStats {
   totalUsers: number;
   usersWithThemes: number;
   darkModeUsers: number;
-  themeBreakdown: Array<{
+  themeBreakdown: {
     theme_preference: string;
     count: number;
-  }>;
+  }[];
   adoptionRate: number;
 }
 
@@ -51,11 +51,12 @@ export default function AdminThemesScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    loadThemeData();
+  const getAuthToken = React.useCallback(async () => {
+    // Implement token retrieval logic
+    return 'your-auth-token';
   }, []);
 
-  const loadThemeData = async () => {
+  const loadThemeData = React.useCallback(async () => {
     try {
       setError(null);
       const [analyticsResponse, statsResponse] = await Promise.all([
@@ -86,12 +87,11 @@ export default function AdminThemesScreen() {
       setLoading(false);
       setRefreshing(false);
     }
-  };
+  }, [getAuthToken]);
 
-  const getAuthToken = async () => {
-    // Implement token retrieval logic
-    return 'your-auth-token';
-  };
+  useEffect(() => {
+    loadThemeData();
+  }, [loadThemeData]);
 
   const onRefresh = () => {
     setRefreshing(true);

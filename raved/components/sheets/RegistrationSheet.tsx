@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState } from 'react';
 import {
   View,
   Text,
@@ -16,10 +16,12 @@ import { theme } from '../../theme';
 import { Ionicons } from '@expo/vector-icons';
 import { validateUsername, validateEmail, validatePhone, calculatePasswordStrength } from '../../utils/validation';
 import { useAuth } from '../../hooks/useAuth';
+import api from '../../services/api';
 
 interface RegistrationSheetProps {
   visible: boolean;
   onClose: () => void;
+  asScreen?: boolean; // when true, render as full screen instead of BottomSheet
 }
 
 type RegistrationStep = 1 | 2 | 3 | 4 | 5 | 6;
@@ -27,6 +29,7 @@ type RegistrationStep = 1 | 2 | 3 | 4 | 5 | 6;
 export const RegistrationSheet: React.FC<RegistrationSheetProps> = ({
   visible,
   onClose,
+  asScreen = false,
 }) => {
   const router = useRouter();
   const { register } = useAuth();
@@ -153,8 +156,7 @@ export const RegistrationSheet: React.FC<RegistrationSheetProps> = ({
     }
   };
 
-  return (
-    <BottomSheet visible={visible} onClose={handleClose} height="95%">
+  const content = (
       <View style={styles.container}>
         {/* Header */}
         <View style={styles.header}>
@@ -206,6 +208,19 @@ export const RegistrationSheet: React.FC<RegistrationSheetProps> = ({
           {renderStep()}
         </ScrollView>
       </View>
+  );
+
+  if (asScreen) {
+    return (
+      <SafeAreaView style={{ flex: 1 }}>
+        {content}
+      </SafeAreaView>
+    );
+  }
+
+  return (
+    <BottomSheet visible={visible} onClose={handleClose} height="95%">
+      {content}
     </BottomSheet>
   );
 };
@@ -246,8 +261,8 @@ const Step1: React.FC<{ onNext: () => void; onClose: () => void }> = ({ onNext, 
         </View>
         
         <Text style={stepStyles.welcomeTitle}>Welcome to Raved!</Text>
-        <Text style={stepStyles.welcomeSubtitle}>
-          Join Ghana's premier campus fashion community
+          <Text style={stepStyles.welcomeSubtitle}>
+          Join Ghana’s premier campus fashion community
         </Text>
 
         <View style={stepStyles.features}>
@@ -319,10 +334,20 @@ const Step2: React.FC<{
 }> = ({ data, updateData, onNext, onBack }) => {
   const [usernameValid, setUsernameValid] = useState<boolean | null>(null);
 
-  const validateUsernameField = (username: string) => {
+  const validateUsernameField = async (username: string) => {
     const result = validateUsername(username);
-    setUsernameValid(result.valid);
-    return result.valid;
+    if (!result.valid) {
+      setUsernameValid(false);
+      return false;
+    }
+    try {
+      const res = await api.get(`/auth/check-username`, { params: { username } });
+      setUsernameValid(!!res.data?.available);
+      return !!res.data?.available;
+    } catch {
+      setUsernameValid(false);
+      return false;
+    }
   };
 
   const isStepValid = data.firstName && data.lastName && usernameValid;
@@ -361,10 +386,10 @@ const Step2: React.FC<{
           <Input
             label="Username *"
             value={data.username}
-            onChangeText={(text) => {
+            onChangeText={async (text) => {
               updateData({ username: text });
               if (text.length > 0) {
-                validateUsernameField(text);
+                await validateUsernameField(text);
               } else {
                 setUsernameValid(null);
               }
@@ -557,32 +582,44 @@ const Step4: React.FC<{
   const [emailCode, setEmailCode] = useState('');
   const [phoneCode, setPhoneCode] = useState('');
 
-  const generateCode = () => Math.floor(100000 + Math.random() * 900000).toString();
+  const _generateCode = () => Math.floor(100000 + Math.random() * 900000).toString();
 
-  const handleSendEmailCode = () => {
-    const code = generateCode();
-    console.log('Email verification code:', code);
-    alert(`Demo Mode: Email verification code is ${code}\n\nIn production, this would be sent to ${data.email}`);
-    setEmailCodeSent(true);
+  const handleSendEmailCode = async () => {
+    try {
+      await api.post('/auth/register/send-email-code', { email: data.email });
+      setEmailCodeSent(true);
+    } catch (e) {
+      console.error('Send email code failed', e);
+    }
   };
 
-  const handleSendPhoneCode = () => {
-    const code = generateCode();
-    console.log('SMS verification code:', code);
-    alert(`Demo Mode: SMS verification code is ${code}\n\nIn production, this would be sent to ${data.phone}`);
-    setPhoneCodeSent(true);
+  const handleSendPhoneCode = async () => {
+    try {
+      await api.post('/auth/register/send-sms-code', { phone: data.phone });
+      setPhoneCodeSent(true);
+    } catch (e) {
+      console.error('Send SMS code failed', e);
+    }
   };
 
-  const verifyEmailCode = () => {
-    // Mock verification - in real app, verify against server
-    setEmailVerified(true);
-    updateData({ emailVerified: true });
+  const verifyEmailCode = async () => {
+    try {
+      await api.post('/auth/register/verify-email-code', { email: data.email, code: emailCode });
+      setEmailVerified(true);
+      updateData({ emailVerified: true });
+    } catch (e) {
+      console.error('Verify email failed', e);
+    }
   };
 
-  const verifyPhoneCode = () => {
-    // Mock verification - in real app, verify against server
-    setPhoneVerified(true);
-    updateData({ phoneVerified: true });
+  const verifyPhoneCode = async () => {
+    try {
+      await api.post('/auth/register/verify-sms-code', { phone: data.phone, code: phoneCode });
+      setPhoneVerified(true);
+      updateData({ phoneVerified: true });
+    } catch (e) {
+      console.error('Verify SMS failed', e);
+    }
   };
 
   const isStepValid = emailVerified && phoneVerified;
@@ -613,7 +650,7 @@ const Step4: React.FC<{
             
             <View style={stepStyles.verificationInfo}>
               <Text style={stepStyles.verificationText}>
-                We'll send a verification code to: {' '}
+                We’ll send a verification code to: {' '}
                 <Text style={stepStyles.verificationEmail}>{data.email}</Text>
               </Text>
             </View>
@@ -663,7 +700,7 @@ const Step4: React.FC<{
             
             <View style={stepStyles.verificationInfo}>
               <Text style={stepStyles.verificationText}>
-                We'll send an SMS code to: {' '}
+                We’ll send an SMS code to: {' '}
                 <Text style={stepStyles.verificationEmail}>{data.phone}</Text>
               </Text>
             </View>
@@ -1028,7 +1065,7 @@ const Step6: React.FC<{
                 </Text>
               </TouchableOpacity>
               <Text style={stepStyles.termsNote}>
-                By creating an account, you agree to our terms and confirm you're 13 or older.
+                By creating an account, you agree to our terms and confirm you’re 13 or older.
               </Text>
             </View>
           </View>

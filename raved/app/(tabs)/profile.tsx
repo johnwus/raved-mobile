@@ -18,23 +18,29 @@ import { Button } from '../../components/ui/Button';
 import { Avatar } from '../../components/ui/Avatar';
 import { EmptyState } from '../../components/ui/EmptyState';
 import { useAuth } from '../../hooks/useAuth';
-import { usePostsStore } from '../../store/postsStore';
-import { Post } from '../../types';
+import { Post, StoreItem } from '../../types';
 import { userApi, UserProfile } from '../../services/userApi';
 import { subscriptionsApi } from '../../services/subscriptionsApi';
+import { Storage } from '../../services/storage';
+import { storeApi } from '../../services/storeApi';
+import { ProductGrid } from '../../components/store/ProductGrid';
+import { SkeletonLoader } from '../../components/ui/SkeletonLoader';
 
 type ProfileTab = 'posts' | 'comments' | 'liked' | 'saved';
 
+type SavedSegment = 'posts' | 'products';
+
 export default function ProfileScreen() {
   const router = useRouter();
-  const { user: authUser, logout } = useAuth();
-  const { savedPosts } = usePostsStore();
+  const { user: authUser } = useAuth();
   const [activeTab, setActiveTab] = useState<ProfileTab>('posts');
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [userPosts, setUserPosts] = useState<Post[]>([]);
   const [userComments, setUserComments] = useState<any[]>([]);
   const [likedPosts, setLikedPosts] = useState<Post[]>([]);
   const [savedPostsList, setSavedPostsList] = useState<Post[]>([]);
+  const [savedProducts, setSavedProducts] = useState<StoreItem[]>([]);
+  const [savedSegment, setSavedSegment] = useState<SavedSegment>('posts');
   const [stats, setStats] = useState({ postCount: 0, followerCount: 0, followingCount: 0, likeCount: 0 });
   const [subscriptionStatus, setSubscriptionStatus] = useState<any>(null);
   const [loading, setLoading] = useState(true);
@@ -47,11 +53,76 @@ export default function ProfileScreen() {
     }
   }, [authUser]);
 
+  const profileId = profile?.id;
+  const cacheKey = React.useCallback((tab: ProfileTab) => `profile_tab_${tab}_${profileId || 'me'}`,[profileId]);
+
+  const loadTabContent = React.useCallback(async () => {
+    if (!profileId) return;
+    
+    try {
+      setLoadingTab(true);
+      switch (activeTab) {
+        case 'posts':
+          try {
+            const postsData = await userApi.getUserPosts(profileId);
+            setUserPosts(postsData.posts || []);
+            await Storage.set(cacheKey('posts'), postsData.posts || []);
+          } catch {
+            const cached = await Storage.get<Post[]>(cacheKey('posts'), []);
+            setUserPosts(cached);
+          }
+          break;
+        case 'comments':
+          try {
+            const commentsData = await userApi.getUserComments(profileId);
+            setUserComments(commentsData.comments || []);
+            await Storage.set(cacheKey('comments'), commentsData.comments || []);
+          } catch {
+            const cached = await Storage.get<any[]>(cacheKey('comments'), []);
+            setUserComments(cached);
+          }
+          break;
+        case 'liked':
+          try {
+            const likedData = await userApi.getUserLikedPosts(profileId);
+            setLikedPosts(likedData.posts || []);
+            await Storage.set(cacheKey('liked'), likedData.posts || []);
+          } catch {
+            const cached = await Storage.get<Post[]>(cacheKey('liked'), []);
+            setLikedPosts(cached);
+          }
+          break;
+        case 'saved':
+          try {
+            // Saved posts
+            const savedData = await userApi.getUserSavedPosts(profileId);
+            setSavedPostsList(savedData.posts || []);
+            await Storage.set(cacheKey('saved'), savedData.posts || []);
+            // Saved products (wishlist)
+            const wishlist = await storeApi.getUserWishlist();
+            const products: StoreItem[] = (wishlist.savedItems || []).map((w: any) => w.item);
+            setSavedProducts(products);
+            await Storage.set(`${cacheKey('saved')}_products`, products || []);
+          } catch {
+            const cachedPosts = await Storage.get<Post[]>(cacheKey('saved'), []);
+            setSavedPostsList(cachedPosts);
+            const cachedProducts = await Storage.get<StoreItem[]>(`${cacheKey('saved')}_products`, []);
+            setSavedProducts(cachedProducts);
+          }
+          break;
+      }
+    } catch (error) {
+      console.error('Failed to load tab content:', error);
+    } finally {
+      setLoadingTab(false);
+    }
+  }, [activeTab, profileId, cacheKey]);
+
   useEffect(() => {
     if (profile) {
       loadTabContent();
     }
-  }, [activeTab, profile]);
+  }, [profile, loadTabContent]);
 
   const loadProfile = async () => {
     try {
@@ -70,37 +141,6 @@ export default function ProfileScreen() {
       setLoading(false);
     }
   };
-
-  const loadTabContent = async () => {
-    if (!profile) return;
-    
-    try {
-      setLoadingTab(true);
-      switch (activeTab) {
-        case 'posts':
-          const postsData = await userApi.getUserPosts(profile.id);
-          setUserPosts(postsData.posts || []);
-          break;
-        case 'comments':
-          const commentsData = await userApi.getUserComments(profile.id);
-          setUserComments(commentsData.comments || []);
-          break;
-        case 'liked':
-          const likedData = await userApi.getUserLikedPosts(profile.id);
-          setLikedPosts(likedData.posts || []);
-          break;
-        case 'saved':
-          const savedData = await userApi.getUserSavedPosts(profile.id);
-          setSavedPostsList(savedData.posts || []);
-          break;
-      }
-    } catch (error) {
-      console.error('Failed to load tab content:', error);
-    } finally {
-      setLoadingTab(false);
-    }
-  };
-
   const onRefresh = async () => {
     setRefreshing(true);
     await loadProfile();
@@ -432,12 +472,61 @@ export default function ProfileScreen() {
 
           {/* Tab Content */}
           <View style={styles.tabContent}>
-            {loadingTab && getTabContent().length === 0 && activeTab !== 'comments' ? (
-              <View style={styles.loadingContainer}>
-                <ActivityIndicator size="large" color={theme.colors.primary} />
-              </View>
-            ) : activeTab === 'comments' ? (
+            {activeTab === 'comments' ? (
               renderComments()
+            ) : activeTab === 'saved' ? (
+              <View>
+                {/* Segmented control for Saved */}
+                <View style={styles.segmentContainer}>
+                  <TouchableOpacity
+                    style={[styles.segment, savedSegment === 'posts' && styles.segmentActive]}
+                    onPress={() => setSavedSegment('posts')}
+                  >
+                    <Text style={[styles.segmentText, savedSegment === 'posts' && styles.segmentTextActive]}>Posts</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[styles.segment, savedSegment === 'products' && styles.segmentActive]}
+                    onPress={() => setSavedSegment('products')}
+                  >
+                    <Text style={[styles.segmentText, savedSegment === 'products' && styles.segmentTextActive]}>Products</Text>
+                  </TouchableOpacity>
+                </View>
+
+                {loadingTab && savedPostsList.length === 0 && savedProducts.length === 0 ? (
+                  <View style={{ paddingTop: theme.spacing[4] }}>
+                    {/* Skeleton grid: 3x3 for posts */}
+                    <View style={styles.skeletonRow}>
+                      <SkeletonLoader height={110} style={styles.skeletonItem} />
+                      <SkeletonLoader height={110} style={styles.skeletonItem} />
+                      <SkeletonLoader height={110} style={styles.skeletonItem} />
+                    </View>
+                    <View style={styles.skeletonRow}>
+                      <SkeletonLoader height={110} style={styles.skeletonItem} />
+                      <SkeletonLoader height={110} style={styles.skeletonItem} />
+                      <SkeletonLoader height={110} style={styles.skeletonItem} />
+                    </View>
+                  </View>
+                ) : savedSegment === 'posts' ? (
+                  renderPostGrid(savedPostsList)
+                ) : savedProducts.length === 0 ? (
+                  <EmptyState icon="bookmark-outline" title="No saved products yet" />
+                ) : (
+                  <ProductGrid products={savedProducts} />
+                )}
+              </View>
+            ) : loadingTab && getTabContent().length === 0 ? (
+              <View style={{ paddingTop: theme.spacing[4] }}>
+                <View style={styles.skeletonRow}>
+                  <SkeletonLoader height={110} style={styles.skeletonItem} />
+                  <SkeletonLoader height={110} style={styles.skeletonItem} />
+                  <SkeletonLoader height={110} style={styles.skeletonItem} />
+                </View>
+                <View style={styles.skeletonRow}>
+                  <SkeletonLoader height={110} style={styles.skeletonItem} />
+                  <SkeletonLoader height={110} style={styles.skeletonItem} />
+                  <SkeletonLoader height={110} style={styles.skeletonItem} />
+                </View>
+              </View>
             ) : (
               renderPostGrid(getTabContent())
             )}
@@ -615,6 +704,41 @@ const styles = StyleSheet.create({
   tabContent: {
     padding: theme.spacing[4],
     minHeight: 300,
+  },
+  segmentContainer: {
+    flexDirection: 'row',
+    backgroundColor: '#F3F4F6',
+    borderRadius: theme.borderRadius.full,
+    padding: 4,
+    alignSelf: 'center',
+    marginBottom: theme.spacing[3],
+  },
+  segment: {
+    flex: 1,
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+    borderRadius: theme.borderRadius.full,
+    alignItems: 'center',
+  },
+  segmentActive: {
+    backgroundColor: '#FFFFFF',
+  },
+  segmentText: {
+    fontSize: theme.typography.fontSize[12],
+    color: '#6B7280',
+    fontWeight: theme.typography.fontWeight.medium,
+  },
+  segmentTextActive: {
+    color: theme.colors.primary,
+  },
+  skeletonRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: theme.spacing[2],
+  },
+  skeletonItem: {
+    width: '32%',
+    borderRadius: theme.borderRadius.base,
   },
   postRow: {
     gap: 2,

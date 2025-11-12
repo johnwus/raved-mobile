@@ -1,5 +1,5 @@
 import React from 'react';
-import { View, FlatList, StyleSheet } from 'react-native';
+import { FlatList, StyleSheet } from 'react-native';
 import { ProductCard } from './ProductCard';
 import { StoreItem } from '../../types';
 import { useStoreStore } from '../../store/storeStore';
@@ -11,7 +11,6 @@ interface ProductGridProps {
 
 export const ProductGrid: React.FC<ProductGridProps> = ({
   products,
-  onProductPress,
 }) => {
   const { savedItems, addToCart, saveProduct, unsaveProduct } = useStoreStore();
 

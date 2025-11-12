@@ -5,9 +5,6 @@ import {
   ScrollView,
   TouchableOpacity,
   StyleSheet,
-  TextInput,
-  KeyboardAvoidingView,
-  Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
@@ -15,7 +12,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { theme } from '../theme';
 import { Avatar } from '../components/ui/Avatar';
 import { EmptyState } from '../components/ui/EmptyState';
-import chatApi from '../services/chatApi';
+import { chatApi } from '../services/chatApi';
 import { useAuth } from '../hooks/useAuth';
 
 interface Chat {
@@ -41,7 +38,7 @@ export default function ChatScreen() {
   const { user } = useAuth();
   const [chats, setChats] = useState<Chat[]>([]);
   const [loading, setLoading] = useState(true);
-  const scrollViewRef = useRef<ScrollView>(null);
+  const _scrollViewRef = useRef<ScrollView>(null);
 
   useEffect(() => {
     const fetchChats = async () => {
@@ -128,7 +125,7 @@ export default function ChatScreen() {
               >
                 <View style={styles.avatarContainer}>
                   <Avatar uri={chat.otherParticipant.avatarUrl || ''} size={44} />
-                  <View style={styles.statusDotOffline} />
+                  <View style={[styles.statusDot, styles.statusDotOnline]} />
                 </View>
                 <View style={styles.chatInfo}>
                   <View style={styles.chatHeader}>

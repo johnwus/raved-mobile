@@ -69,6 +69,40 @@ api.interceptors.response.use(
 
 export default api;
 
+// Badge/count helpers
+export async function getCartCount(): Promise<number> {
+  const res = await api.get('/cart');
+  // Prefer explicit count if provided; fallback to items length
+  const data = res.data || {};
+  if (typeof data.count === 'number') return data.count;
+  if (Array.isArray(data.items)) return data.items.length;
+  if (Array.isArray(data.cartItems)) return data.cartItems.length;
+  return 0;
+}
+
+export async function getUnreadMessagesCount(): Promise<number> {
+  const res = await api.get('/chats');
+  const chats = res.data?.chats || [];
+  return Array.isArray(chats)
+    ? chats.reduce((sum: number, c: any) => sum + (Number(c.unreadCount) || 0), 0)
+    : 0;
+}
+
+export async function getPendingConnectionRequestsCount(): Promise<number> {
+  const res = await api.get('/connections/requests');
+  const requests = res.data || res.data?.requests || [];
+  if (Array.isArray(requests)) return requests.length;
+  // Some APIs wrap results: { data: { requests: [...] } }
+  const nested = res.data?.data?.requests;
+  return Array.isArray(nested) ? nested.length : 0;
+}
+
+export async function getUnreadNotificationsCount(): Promise<number> {
+  const res = await api.get('/notifications');
+  const unread = res.data?.unreadCount;
+  return typeof unread === 'number' ? unread : 0;
+}
+
 /**
  * Normalize a user-provided identifier and perform login.
  * Rules:
@@ -81,13 +115,15 @@ export async function login(identifier: string, password: string) {
    let normalized = identifier?.toString().trim();
    if (!normalized) throw new Error('Identifier is required');
 
-   // Only allow email login for now
+   // Normalize identifier per prototype: email | username | phone
    const isEmail = /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(normalized);
-   if (!isEmail) {
-     throw new Error('Only email login is currently supported. Please use your email address.');
+   const isPhone = /^\+?\d{7,15}$/.test(normalized.replace(/[\s-]/g, ''));
+   if (!isEmail && !isPhone) {
+     // Treat as username; strip leading '@' if present
+     normalized = normalized.startsWith('@') ? normalized.slice(1) : normalized;
    }
 
-   console.log('API login request:', { email: normalized, hasPassword: !!password });
+   console.log('API login request:', { identifier: normalized, hasPassword: !!password });
    const res = await api.post('/auth/login', {
      identifier: normalized,
      password,

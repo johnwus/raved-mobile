@@ -4,7 +4,6 @@ import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { theme } from '../../theme';
 import { StoreItem } from '../../types';
-import { Badge } from '../ui/Badge';
 import { formatCurrency } from '../../utils/formatters';
 
 interface ProductCardProps {

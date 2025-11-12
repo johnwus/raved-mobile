@@ -1,14 +1,14 @@
 import React from 'react';
-import { View, TouchableOpacity, Text, StyleSheet, Animated } from 'react-native';
+import { View, TouchableOpacity, Text, StyleSheet, Animated, AppState, AppStateStatus } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
-import { useRouter } from 'expo-router';
-import { theme } from '../../theme';
+import { useRouter, usePathname } from 'expo-router';
 import { useStoreStore } from '../../store/storeStore';
+import { getCartCount, getPendingConnectionRequestsCount, getUnreadMessagesCount } from '../../services/api';
 
 interface FABProps {
   icon: keyof typeof Ionicons.glyphMap;
-  gradientColors: string[];
+  gradientColors: readonly [string, string];
   badge?: number;
   onPress: () => void;
 }
@@ -60,27 +60,59 @@ export const FloatingActionButtons: React.FC = () => {
   const router = useRouter();
   const { cart } = useStoreStore();
 
-  const cartCount = cart.length;
-  const connectionsCount = 5; // Mock data
-  const messagesCount = 3; // Mock data
+  // Start with local counts; hydrate with API
+  const [cartCount, setCartCount] = React.useState<number>(cart.length);
+  const [connectionsCount, setConnectionsCount] = React.useState<number>(0);
+  const [messagesCount, setMessagesCount] = React.useState<number>(0);
+
+  const pathname = usePathname();
+
+  const refreshCounts = React.useCallback(async () => {
+    try {
+      const [cartC, connC, msgC] = await Promise.all([
+        getCartCount().catch(() => cart.length),
+        getPendingConnectionRequestsCount().catch(() => 0),
+        getUnreadMessagesCount().catch(() => 0),
+      ]);
+      setCartCount(typeof cartC === 'number' ? cartC : cart.length);
+      setConnectionsCount(connC);
+      setMessagesCount(msgC);
+    } catch {
+      // ignore; keep defaults
+    }
+  }, [cart.length]);
+
+  // On mount and when route changes
+  React.useEffect(() => {
+    refreshCounts();
+  }, [refreshCounts, pathname]);
+
+  // On app foreground
+  React.useEffect(() => {
+    const handler = (state: AppStateStatus) => {
+      if (state === 'active') refreshCounts();
+    };
+    const sub = AppState.addEventListener('change', handler);
+    return () => sub.remove();
+  }, [refreshCounts]);
 
   return (
     <View style={styles.container}>
       <FAB
         icon="bag-handle"
-        gradientColors={['#A855F7', '#EC4899']} // purple-500 to pink-500
+        gradientColors={['#A855F7', '#EC4899'] as const} // purple-500 to pink-500
         badge={cartCount}
         onPress={() => router.push('/store' as any)}
       />
       <FAB
         icon="people"
-        gradientColors={['#10B981', '#059669']} // green-500 to emerald-500
+        gradientColors={['#10B981', '#059669'] as const} // green-500 to emerald-500
         badge={connectionsCount}
         onPress={() => router.push('/connections' as any)}
       />
       <FAB
         icon="chatbubble"
-        gradientColors={['#3B82F6', '#06B6D4']} // blue-500 to cyan-500
+        gradientColors={['#3B82F6', '#06B6D4'] as const} // blue-500 to cyan-500
         badge={messagesCount}
         onPress={() => router.push('/chat' as any)}
       />

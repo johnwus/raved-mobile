@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState , useEffect } from 'react';
 import {
   View,
   Text,
@@ -6,7 +6,6 @@ import {
   TouchableOpacity,
   Image,
   StyleSheet,
-  FlatList,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useLocalSearchParams } from 'expo-router';
@@ -16,7 +15,7 @@ import { ProductCard } from '../components/store/ProductCard';
 import { mockStoreItems } from '../utils/mockData';
 import { StoreItem } from '../types';
 import { storeApi } from '../services/storeApi';
-import { useEffect, useState } from 'react';
+
 
 type FilterType = 'all' | 'category' | 'price' | 'seller' | 'trending';
 
@@ -26,22 +25,11 @@ export default function SimilarItemsScreen() {
   const [activeFilter, setActiveFilter] = useState<FilterType>('all');
   const [currentProduct, setCurrentProduct] = useState<StoreItem | null>(null);
   const [allItems, setAllItems] = useState<StoreItem[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [_loading, _setLoading] = useState(true);
 
-  useEffect(() => {
-    loadItems();
-  }, []);
-
-  useEffect(() => {
-    if (productId && allItems.length > 0) {
-      const product = allItems.find(item => item.id === productId);
-      setCurrentProduct(product || null);
-    }
-  }, [productId, allItems]);
-
-  const loadItems = async () => {
+  const loadItemsCb = React.useCallback(async () => {
     try {
-      setLoading(true);
+      _setLoading(true);
       const response = await storeApi.getStoreItems({ page: 1, limit: 50 });
       setAllItems(response.items || []);
       
@@ -60,7 +48,43 @@ export default function SimilarItemsScreen() {
         : mockStoreItems[0]
       );
     } finally {
-      setLoading(false);
+      _setLoading(false);
+    }
+  }, [productId]);
+
+  useEffect(() => {
+    loadItemsCb();
+  }, [loadItemsCb]);
+
+  useEffect(() => {
+    if (productId && allItems.length > 0) {
+      const product = allItems.find(item => item.id === productId);
+      setCurrentProduct(product || null);
+    }
+  }, [productId, allItems]);
+
+  const _loadItems = async () => {
+    try {
+      _setLoading(true);
+      const response = await storeApi.getStoreItems({ page: 1, limit: 50 });
+      setAllItems(response.items || []);
+      
+      if (productId) {
+        const product = response.items.find((item: StoreItem) => item.id === productId);
+        setCurrentProduct(product || null);
+      } else if (response.items.length > 0) {
+        setCurrentProduct(response.items[0]);
+      }
+    } catch (error) {
+      console.error('Failed to load items:', error);
+      // Fallback to mock data
+      setAllItems(mockStoreItems);
+      setCurrentProduct(productId 
+        ? mockStoreItems.find(item => item.id === productId) || mockStoreItems[0]
+        : mockStoreItems[0]
+      );
+    } finally {
+      _setLoading(false);
     }
   };
 

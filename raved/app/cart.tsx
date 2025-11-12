@@ -18,7 +18,7 @@ import { EmptyState } from '../components/ui/EmptyState';
 
 export default function CartScreen() {
   const router = useRouter();
-  const { cart, products, removeFromCart, updateCartQuantity, clearCart, isLoading, error } = useStoreStore();
+  const { cart, products, removeFromCart, updateCartQuantity, isLoading } = useStoreStore();
 
   console.log('Cart items:', cart);
   console.log('Products:', products);

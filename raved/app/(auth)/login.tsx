@@ -13,8 +13,7 @@ import { useRouter } from 'expo-router';
 import { theme } from '../../theme';
 import { Button } from '../../components/ui/Button';
 import { Input } from '../../components/ui/Input';
-import { RegistrationSheet } from '../../components/sheets/RegistrationSheet';
-import { PasswordResetSheet } from '../../components/sheets/PasswordResetSheet';
+// import { RegistrationSheet } from '../../components/sheets/RegistrationSheet';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../../hooks/useAuth';
 import { Storage } from '../../services/storage';
@@ -26,8 +25,7 @@ export default function LoginScreen() {
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [rememberMe, setRememberMe] = useState(false);
-  const [showRegistration, setShowRegistration] = useState(false);
-  const [showResetPassword, setShowResetPassword] = useState(false);
+  const [_showRegistration, _setShowRegistration] = useState(false);
   const [loading, setLoading] = useState(false);
   const [twoFactorCode, setTwoFactorCode] = useState('');
   const [showTwoFactor, setShowTwoFactor] = useState(false);
@@ -35,6 +33,8 @@ export default function LoginScreen() {
   const handleLogin = async () => {
     setLoading(true);
     try {
+      // Persist remember-me preference
+      await Storage.set('rememberMe', rememberMe);
       await login(identifier, password);
       if (requiresTwoFactor) {
         setShowTwoFactor(true);
@@ -112,7 +112,7 @@ export default function LoginScreen() {
                       </TouchableOpacity>
                     }
                   />
-                  <TouchableOpacity onPress={() => setShowResetPassword(true)} style={styles.forgotPassword}>
+                  <TouchableOpacity onPress={() => router.push('/(auth)/reset-password' as any)} style={styles.forgotPassword}>
                     <Text style={styles.forgotPasswordText}>Forgot password?</Text>
                   </TouchableOpacity>
                 </View>
@@ -149,7 +149,7 @@ export default function LoginScreen() {
               {/* Register Link */}
               <View style={styles.registerContainer}>
                 <Text style={styles.registerText}>No account?</Text>
-                <TouchableOpacity onPress={() => setShowRegistration(true)}>
+                <TouchableOpacity onPress={() => router.push('/(auth)/register' as any)}>
                   <Text style={styles.registerLink}>Register</Text>
                 </TouchableOpacity>
               </View>
@@ -167,17 +167,6 @@ export default function LoginScreen() {
         </ScrollView>
       </KeyboardAvoidingView>
 
-      {/* Registration Sheet */}
-      <RegistrationSheet
-        visible={showRegistration}
-        onClose={() => setShowRegistration(false)}
-      />
-
-      {/* Password Reset Sheet */}
-      <PasswordResetSheet
-        visible={showResetPassword}
-        onClose={() => setShowResetPassword(false)}
-      />
 
       {/* 2FA Modal */}
       {showTwoFactor && (
@@ -185,7 +174,7 @@ export default function LoginScreen() {
           <View style={styles.twoFactorContent}>
             <Text style={styles.twoFactorTitle}>Enter 2FA Code</Text>
             <Text style={styles.twoFactorSubtitle}>
-              We've sent a verification code to your phone
+              We’ve sent a verification code to your phone
             </Text>
             <Input
               label="Verification Code"

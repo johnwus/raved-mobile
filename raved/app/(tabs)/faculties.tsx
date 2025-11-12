@@ -13,10 +13,12 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { theme } from '../../theme';
 import { PostCard } from '../../components/posts/PostCard';
-import { useAuth } from '../../hooks/useAuth';
 import { Post } from '../../types';
 import { facultiesApi, Faculty } from '../../services/facultiesApi';
 import { postsApi } from '../../services/postsApi';
+import { useRouter } from 'expo-router';
+import { MoreSheet } from '../../components/sheets/MoreSheet';
+import { SkeletonLoader } from '../../components/ui/SkeletonLoader';
 
 const facultyIcons: Record<string, keyof typeof Ionicons.glyphMap> = {
   'arts': 'color-palette',
@@ -40,7 +42,7 @@ const facultyColors: Record<string, string[]> = {
 };
 
 export default function FacultiesScreen() {
-  const { user } = useAuth();
+  const router = useRouter();
   const [faculties, setFaculties] = useState<Faculty[]>([]);
   const [selectedFaculty, setSelectedFaculty] = useState<string | null>(null);
   const [facultyStats, setFacultyStats] = useState<{ memberCount: number; postCount: number; eventCount: number } | null>(null);
@@ -182,6 +184,8 @@ export default function FacultiesScreen() {
     );
   };
 
+  const [moreSheetVisible, setMoreSheetVisible] = useState(false);
+
   if (loading && faculties.length === 0) {
     return (
       <SafeAreaView style={styles.container}>
@@ -194,12 +198,47 @@ export default function FacultiesScreen() {
 
   return (
     <SafeAreaView style={styles.container}>
+      {/* Header */}
+      <View style={styles.header}>
+        <TouchableOpacity 
+          style={styles.headerButton}
+          onPress={() => setMoreSheetVisible(true)}
+        >
+          <Ionicons name="menu" size={24} color="#111827" />
+        </TouchableOpacity>
+        <Text style={styles.headerTitle}>Faculties</Text>
+        <View style={styles.headerActions}>
+          <TouchableOpacity 
+            style={styles.headerButton}
+            onPress={() => router.push('/search' as any)}
+          >
+            <Ionicons name="search" size={24} color="#111827" />
+          </TouchableOpacity>
+          <TouchableOpacity 
+            style={styles.headerButton}
+            onPress={() => router.push('/notifications' as any)}
+          >
+            <Ionicons name="notifications-outline" size={24} color="#111827" />
+          </TouchableOpacity>
+        </View>
+      </View>
+
       <ScrollView 
         style={styles.scrollView} 
         showsVerticalScrollIndicator={false}
         refreshControl={
           <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
         }
+        onScroll={({ nativeEvent }) => {
+          const { layoutMeasurement, contentOffset, contentSize } = nativeEvent;
+          const paddingToBottom = 20;
+          if (layoutMeasurement.height + contentOffset.y >= contentSize.height - paddingToBottom) {
+            if (hasMore && !loadingPosts && selectedFaculty) {
+              loadMorePosts();
+            }
+          }
+        }}
+        scrollEventThrottle={400}
       >
         {/* Faculty Selection */}
         <View style={styles.facultySelection}>
@@ -243,8 +282,22 @@ export default function FacultiesScreen() {
             </View>
 
             {loadingPosts && facultyPosts.length === 0 ? (
-              <View style={styles.loadingContainer}>
-                <ActivityIndicator size="large" color={theme.colors.primary} />
+              <View style={{ paddingVertical: theme.spacing[4], gap: theme.spacing[4] }}>
+                {[0,1,2].map(i => (
+                  <View key={i} style={{ backgroundColor: '#FFF', borderRadius: 16, overflow: 'hidden' }}>
+                    <View style={{ padding: 12, flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+                      <SkeletonLoader height={36} width={36} borderRadius={18} />
+                      <View style={{ flex: 1 }}>
+                        <SkeletonLoader height={12} style={{ width: '50%' }} />
+                        <SkeletonLoader height={10} style={{ width: '30%', marginTop: 6 }} />
+                      </View>
+                    </View>
+                    <SkeletonLoader height={220} />
+                    <View style={{ padding: 12 }}>
+                      <SkeletonLoader height={12} style={{ width: '60%' }} />
+                    </View>
+                  </View>
+                ))}
               </View>
             ) : facultyPosts.length > 0 ? (
               <>
@@ -255,18 +308,10 @@ export default function FacultiesScreen() {
                   scrollEnabled={false}
                   ItemSeparatorComponent={() => <View style={{ height: theme.spacing[4] }} />}
                 />
-                {hasMore && (
-                  <TouchableOpacity 
-                    style={styles.loadMoreButton}
-                    onPress={loadMorePosts}
-                    disabled={loadingPosts}
-                  >
-                    {loadingPosts ? (
-                      <ActivityIndicator size="small" color={theme.colors.primary} />
-                    ) : (
-                      <Text style={styles.loadMoreText}>Load More</Text>
-                    )}
-                  </TouchableOpacity>
+                {hasMore && loadingPosts && (
+                  <View style={{ marginTop: theme.spacing[3] }}>
+                    <SkeletonLoader height={42} style={{ borderRadius: 16 }} />
+                  </View>
                 )}
               </>
             ) : (
@@ -285,6 +330,8 @@ export default function FacultiesScreen() {
           </View>
         )}
       </ScrollView>
+      {/* More Sheet */}
+      <MoreSheet visible={moreSheetVisible} onClose={() => setMoreSheetVisible(false)} />
     </SafeAreaView>
   );
 }
@@ -293,6 +340,28 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#f8fafc',
+  },
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: theme.spacing[4],
+    paddingVertical: theme.spacing[3],
+    borderBottomWidth: 1,
+    borderBottomColor: '#E5E7EB',
+    backgroundColor: '#FFFFFF',
+  },
+  headerButton: {
+    padding: theme.spacing[2],
+  },
+  headerTitle: {
+    fontSize: theme.typography.fontSize[18],
+    fontWeight: theme.typography.fontWeight.bold,
+    color: '#111827',
+  },
+  headerActions: {
+    flexDirection: 'row',
+    gap: theme.spacing[2],
   },
   scrollView: {
     flex: 1,

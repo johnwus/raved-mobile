@@ -1,5 +1,5 @@
-import React from 'react';
-import { View, Text, TouchableOpacity, Image, StyleSheet, FlatList } from 'react-native';
+import React, { useState } from 'react';
+import { View, Text, TouchableOpacity, Image, StyleSheet, FlatList, NativeScrollEvent, NativeSyntheticEvent } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { theme } from '../../theme';
@@ -7,6 +7,10 @@ import { Post } from '../../types';
 import { Avatar } from '../ui/Avatar';
 import { Badge } from '../ui/Badge';
 import { usePostsStore } from '../../store/postsStore';
+import { useToastStore } from '../../store/toastStore';
+import { useStore } from '../../hooks/useStore';
+import { VideoView } from 'expo-video';
+const AnyVideo: any = VideoView;
 
 interface PostCardProps {
   post: Post;
@@ -15,6 +19,7 @@ interface PostCardProps {
 export const PostCard: React.FC<PostCardProps> = ({ post }) => {
   const router = useRouter();
   const { likePost, unlikePost, savePost, unsavePost } = usePostsStore();
+  const { isPremium, subscribeToPremium } = useStore();
 
   const handleLike = async () => {
     try {
@@ -34,6 +39,30 @@ export const PostCard: React.FC<PostCardProps> = ({ post }) => {
     } else {
       savePost(post.id);
     }
+  };
+
+  const { showToast } = useToastStore();
+
+  const handleShare = async () => {
+    try {
+      const postsApi = (await import('../../services/postsApi')).default;
+      await postsApi.sharePost(post.id);
+      // Optimistically bump share count
+      usePostsStore.setState((state) => ({
+        posts: state.posts.map(p => p.id === post.id ? { ...p, shares: (p.shares || 0) + 1 } : p)
+      }));
+      showToast('Post shared', 'success');
+    } catch (error) {
+      console.error('Failed to share post:', error);
+    }
+  };
+
+  const [carouselIndex, setCarouselIndex] = useState(0);
+
+  const onCarouselScroll = (e: NativeSyntheticEvent<NativeScrollEvent>) => {
+    const { contentOffset, layoutMeasurement } = e.nativeEvent;
+    const idx = Math.round(contentOffset.x / layoutMeasurement.width);
+    if (idx !== carouselIndex) setCarouselIndex(idx);
   };
 
   const renderMedia = () => {
@@ -58,14 +87,13 @@ export const PostCard: React.FC<PostCardProps> = ({ post }) => {
       return (
         <TouchableOpacity onPress={() => router.push(`/post/${post.id}` as any)}>
           <View style={styles.videoContainer}>
-            <Image 
-              source={{ uri: post.media.thumbnail }} 
+            <AnyVideo
               style={styles.postImage}
-              resizeMode="cover"
+              source={{ uri: post.media.url || post.media.thumbnail }}
+              nativeControls={false}
+              allowsFullscreen
+              allowsPictureInPicture
             />
-            <View style={styles.videoOverlay}>
-              <Ionicons name="play-circle" size={48} color="white" />
-            </View>
             <View style={styles.videoBadge}>
               <Text style={styles.videoBadgeText}>Video</Text>
             </View>
@@ -75,12 +103,13 @@ export const PostCard: React.FC<PostCardProps> = ({ post }) => {
     }
 
     if (post.media.type === 'carousel') {
+      const items = post.media.items || [];
       return (
         <View style={styles.carouselContainer}>
           <FlatList
             horizontal
             pagingEnabled
-            data={post.media.items}
+            data={items}
             renderItem={({ item }) => (
               <Image 
                 source={{ uri: item }} 
@@ -88,13 +117,22 @@ export const PostCard: React.FC<PostCardProps> = ({ post }) => {
                 resizeMode="cover"
               />
             )}
+            onScroll={onCarouselScroll}
+            scrollEventThrottle={16}
             showsHorizontalScrollIndicator={false}
             keyExtractor={(item, index) => index.toString()}
           />
           <View style={styles.carouselBadge}>
             <Ionicons name="copy" size={12} color="white" />
-            <Text style={styles.carouselBadgeText}>{post.media.items?.length}</Text>
+            <Text style={styles.carouselBadgeText}>{items.length}</Text>
           </View>
+          {items.length > 1 && (
+            <View style={styles.carouselDots}>
+              {items.map((_, i) => (
+                <View key={i} style={[styles.carouselDot, i === carouselIndex ? styles.carouselDotActive : undefined]} />
+              ))}
+            </View>
+          )}
         </View>
       );
     }
@@ -114,9 +152,22 @@ export const PostCard: React.FC<PostCardProps> = ({ post }) => {
             </View>
           </View>
         </View>
-        <TouchableOpacity>
-          <Ionicons name="ellipsis-horizontal" size={20} color="#6B7280" />
-        </TouchableOpacity>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+          {!isPremium ? (
+            <TouchableOpacity style={styles.upgradePill} onPress={() => subscribeToPremium('weekly').catch(() => {})}>
+              <Ionicons name="diamond" size={12} color="#8B5CF6" />
+              <Text style={styles.upgradePillText}>Upgrade</Text>
+            </TouchableOpacity>
+          ) : (
+            <View style={styles.premiumPill}>
+              <Ionicons name="diamond" size={12} color="#F59E0B" />
+              <Text style={styles.premiumPillText}>Premium</Text>
+            </View>
+          )}
+          <TouchableOpacity>
+            <Ionicons name="ellipsis-horizontal" size={20} color="#6B7280" />
+          </TouchableOpacity>
+        </View>
       </View>
 
       {/* Caption */}
@@ -134,6 +185,17 @@ export const PostCard: React.FC<PostCardProps> = ({ post }) => {
         <View style={[styles.saleBadge, { backgroundColor: theme.colors.success }]}>
           <Ionicons name="pricetag" size={12} color="white" />
           <Text style={styles.saleBadgeText}>For Sale</Text>
+        </View>
+      )}
+
+      {/* Tags */}
+      {!!post.tags?.length && (
+        <View style={styles.tagsRow}>
+          {post.tags.slice(0, 4).map((t: string, idx: number) => (
+            <TouchableOpacity key={idx}>
+              <Text style={styles.tagText}>#{t}</Text>
+            </TouchableOpacity>
+          ))}
         </View>
       )}
 
@@ -157,9 +219,9 @@ export const PostCard: React.FC<PostCardProps> = ({ post }) => {
             <Text style={styles.actionCount}>{post.comments}</Text>
           </TouchableOpacity>
           
-          <TouchableOpacity style={styles.postAction}>
+          <TouchableOpacity style={styles.postAction} onPress={handleShare}>
             <Ionicons name="paper-plane-outline" size={22} color="#6B7280" />
-            <Text style={styles.actionCount}>{post.shares}</Text>
+            <Text style={styles.actionCount}>Share</Text>
           </TouchableOpacity>
         </View>
         
@@ -173,7 +235,7 @@ export const PostCard: React.FC<PostCardProps> = ({ post }) => {
             <Ionicons
               name={post.saved ? "bookmark" : "bookmark-outline"}
               size={20}
-              color="#6B7280"
+              color={post.saved ? '#F59E0B' : '#6B7280'}
             />
           </TouchableOpacity>
           <TouchableOpacity style={styles.postAction}>
@@ -288,6 +350,23 @@ const styles = StyleSheet.create({
     paddingVertical: theme.spacing[1],
     borderRadius: theme.borderRadius.base,
   },
+  carouselDots: {
+    position: 'absolute',
+    bottom: theme.spacing[3],
+    left: '50%',
+    transform: [{ translateX: -50 } as any],
+    flexDirection: 'row',
+    gap: 6,
+  },
+  carouselDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: 'rgba(255,255,255,0.5)',
+  },
+  carouselDotActive: {
+    backgroundColor: '#FFFFFF',
+  },
   carouselBadgeText: {
     color: 'white',
     fontSize: theme.typography.fontSize[10],
@@ -309,11 +388,50 @@ const styles = StyleSheet.create({
     fontSize: theme.typography.fontSize[11],
     fontWeight: theme.typography.fontWeight.semibold,
   },
+  tagsRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: theme.spacing[2],
+    paddingHorizontal: theme.spacing[3],
+    paddingTop: theme.spacing[2],
+  },
+  tagText: {
+    fontSize: theme.typography.fontSize[12],
+    color: '#6B7280',
+  },
   postActions: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
     padding: theme.spacing[3],
+  },
+  upgradePill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 999,
+    backgroundColor: '#F3E8FF',
+  },
+  upgradePillText: {
+    fontSize: 11,
+    color: '#7C3AED',
+    fontWeight: '600',
+  },
+  premiumPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 999,
+    backgroundColor: '#FFFBEB',
+  },
+  premiumPillText: {
+    fontSize: 11,
+    color: '#92400E',
+    fontWeight: '600',
   },
   postActionsLeft: {
     flexDirection: 'row',

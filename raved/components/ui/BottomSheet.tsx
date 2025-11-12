@@ -1,4 +1,4 @@
-import React, { useRef, useEffect, useState } from 'react';
+import React, { useRef, useEffect, useState, useCallback } from 'react';
 import {
   Modal,
   View,
@@ -7,11 +7,9 @@ import {
   Animated,
   Dimensions,
   PanResponder,
-  ViewStyle,
   Easing,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { theme } from '../../theme';
 import { useTheme } from '../../contexts/ThemeContext';
 
 const { height: SCREEN_HEIGHT } = Dimensions.get('window');
@@ -22,9 +20,19 @@ interface BottomSheetProps {
   visible: boolean;
   onClose: () => void;
   children: React.ReactNode;
-  height?: number | string;
+  height?: number | string; // supports number of px or percentage string (e.g., '100%')
   showHandle?: boolean;
   allowCollapse?: boolean;
+  /**
+   * When true (default), tapping the dimmed overlay dismisses the sheet.
+   * Set to false to require explicit close (X) or drag gesture.
+   */
+  allowOverlayDismiss?: boolean;
+  /**
+   * Force full-screen height (covers the entire device height).
+   * This mimics a modal but preserves the sheet interaction model.
+   */
+  fullScreen?: boolean;
 }
 
 export const BottomSheet: React.FC<BottomSheetProps> = ({
@@ -34,16 +42,19 @@ export const BottomSheet: React.FC<BottomSheetProps> = ({
   height = '90%',
   showHandle = true,
   allowCollapse = true,
+  allowOverlayDismiss = true,
+  fullScreen = false,
 }) => {
   const { isDark } = useTheme();
   const slideAnim = useRef(new Animated.Value(SCREEN_HEIGHT)).current;
   const heightAnim = useRef(new Animated.Value(SCREEN_HEIGHT * 0.6)).current;
   const [sheetState, setSheetState] = useState<SheetState>('default');
-  const [isDragging, setIsDragging] = useState(false);
+  const [_isDragging, _setIsDragging] = useState(false);
   const startY = useRef(0);
   const currentY = useRef(0);
 
-  const getSheetHeight = (state: SheetState): number => {
+  const getSheetHeight = useCallback((state: SheetState): number => {
+    if (fullScreen) return SCREEN_HEIGHT; // Force full device height
     switch (state) {
       case 'collapsed':
         return SCREEN_HEIGHT * 0.6; // 60vh
@@ -52,14 +63,14 @@ export const BottomSheet: React.FC<BottomSheetProps> = ({
       default:
         return SCREEN_HEIGHT * 0.9; // Default
     }
-  };
+  }, [fullScreen]);
 
   const panResponder = useRef(
     PanResponder.create({
       onStartShouldSetPanResponder: () => true,
       onMoveShouldSetPanResponder: () => true,
       onPanResponderGrant: (_, gestureState) => {
-        setIsDragging(true);
+        _setIsDragging(true);
         startY.current = gestureState.moveY;
         currentY.current = gestureState.moveY;
       },
@@ -78,8 +89,8 @@ export const BottomSheet: React.FC<BottomSheetProps> = ({
           }
         }
       },
-      onPanResponderRelease: (_, gestureState) => {
-        setIsDragging(false);
+      onPanResponderRelease: () => {
+        _setIsDragging(false);
         const deltaY = currentY.current - startY.current;
 
         if (deltaY > 100) {
@@ -147,7 +158,7 @@ export const BottomSheet: React.FC<BottomSheetProps> = ({
         useNativeDriver: true,
       }).start();
     }
-  }, [visible]);
+  }, [visible, heightAnim, slideAnim, getSheetHeight]);
 
   const handleDoubleTap = () => {
     if (!allowCollapse) return;
@@ -175,8 +186,14 @@ export const BottomSheet: React.FC<BottomSheetProps> = ({
     if (allowCollapse && sheetState !== 'default') {
       return getSheetHeight(sheetState);
     }
+    if (fullScreen) return SCREEN_HEIGHT;
     if (typeof height === 'number') {
       return height;
+    }
+    // Support percentage strings like '100%'
+    if (typeof height === 'string' && height.endsWith('%')) {
+      const pct = Math.max(0, Math.min(100, parseFloat(height)));
+      return (pct / 100) * SCREEN_HEIGHT;
     }
     return SCREEN_HEIGHT * 0.9;
   };
@@ -189,18 +206,23 @@ export const BottomSheet: React.FC<BottomSheetProps> = ({
       onRequestClose={onClose}
     >
       <Animated.View style={[styles.overlay, { opacity: visible ? 1 : 0 }]}>
-        <TouchableOpacity
-          style={StyleSheet.absoluteFill}
-          activeOpacity={1}
-          onPress={onClose}
-        />
+        {allowOverlayDismiss ? (
+          <TouchableOpacity
+            style={StyleSheet.absoluteFill}
+            activeOpacity={1}
+            onPress={onClose}
+          />
+        ) : (
+          // Block touches but do not dismiss when overlay is pressed
+          <View style={StyleSheet.absoluteFill} pointerEvents="auto" />
+        )}
         <Animated.View
           style={[
             styles.sheet,
             isDark && styles.sheetDark,
             allowCollapse && sheetState !== 'default' 
-              ? { height: heightAnim, maxHeight: typeof height === 'string' ? height : undefined, transform: [{ translateY: slideAnim }] }
-              : { height: getStaticHeight(), maxHeight: typeof height === 'string' ? height : undefined, transform: [{ translateY: slideAnim }] },
+              ? { height: heightAnim, transform: [{ translateY: slideAnim }] }
+              : { height: getStaticHeight(), transform: [{ translateY: slideAnim }] },
           ]}
           {...(showHandle ? panResponder.panHandlers : {})}
         >

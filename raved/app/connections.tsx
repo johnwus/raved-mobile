@@ -53,15 +53,15 @@ export default function ConnectionsScreen() {
   const { user } = useAuth();
   const [activeFilter, setActiveFilter] = useState<ConnectionType>('all');
   const [connections, setConnections] = useState<Connection[]>([]);
-  const [pendingRequests, setPendingRequests] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [_pendingRequests, _setPendingRequests] = useState<any[]>([]);
+  const [_loading, _setLoading] = useState(true);
 
   useEffect(() => {
     const fetchConnections = async () => {
       try {
-        setLoading(true);
-        const type = activeFilter === 'following' ? 'following' : activeFilter === 'followers' ? 'followers' : 'all';
-        const response = await userApi.getConnections(undefined, type);
+        _setLoading(true);
+        const type = activeFilter === 'following' ? 'following' : activeFilter === 'followers' ? 'followers' : undefined;
+        const response = await userApi.getConnections(undefined, type as any);
         
         if (response.success) {
           const allConnections: Connection[] = [];
@@ -118,7 +118,7 @@ export default function ConnectionsScreen() {
           try {
             const requestsResponse = await connectionsApi.getPendingFollowRequests();
             if (requestsResponse.success && requestsResponse.requests) {
-              setPendingRequests(requestsResponse.requests);
+              _setPendingRequests(requestsResponse.requests);
               // Add pending requests to connections
               requestsResponse.requests.forEach((req: any) => {
                 setConnections(prev => [...prev, {
@@ -142,10 +142,10 @@ export default function ConnectionsScreen() {
           }
         }
       } catch (error) {
-        console.error('Failed to fetch connections:', error);
-      } finally {
-        setLoading(false);
-      }
+      console.error('Failed to fetch connections:', error);
+    } finally {
+      _setLoading(false);
+    }
     };
 
     if (user) {
@@ -166,7 +166,7 @@ export default function ConnectionsScreen() {
     try {
       await userApi.followUser(userId);
       // Refresh connections
-      const response = await userApi.getConnections(undefined, activeFilter === 'following' ? 'following' : 'all');
+      const response = await userApi.getConnections(undefined, activeFilter === 'following' ? 'following' : undefined as any);
       if (response.success) {
         // Update connections state
         setConnections(prev => prev.map(conn => 
@@ -194,7 +194,7 @@ export default function ConnectionsScreen() {
     try {
       await connectionsApi.approveFollowRequest(requestId);
       // Remove from pending and add to connections
-      setPendingRequests(prev => prev.filter(req => (req.id || req.request_id) !== requestId));
+      _setPendingRequests(prev => prev.filter(req => (req.id || req.request_id) !== requestId));
       setConnections(prev => prev.filter(conn => conn.id !== requestId));
     } catch (error) {
       console.error('Failed to accept request:', error);
@@ -206,7 +206,7 @@ export default function ConnectionsScreen() {
     try {
       await connectionsApi.rejectFollowRequest(requestId);
       // Remove from pending
-      setPendingRequests(prev => prev.filter(req => (req.id || req.request_id) !== requestId));
+      _setPendingRequests(prev => prev.filter(req => (req.id || req.request_id) !== requestId));
       setConnections(prev => prev.filter(conn => conn.id !== requestId));
     } catch (error) {
       console.error('Failed to reject request:', error);

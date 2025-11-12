@@ -64,17 +64,17 @@ export const useStoriesStore = create<StoriesState>()(
     {
       name: 'raved-stories',
       storage: {
-        getItem: async (name) => {
+        getItem: async (name: string) => {
           try {
             const value = await Storage.get(name, null);
-            if (value === null) return null;
-            return JSON.stringify(value);
+            if (value === null) return null as any;
+            return JSON.stringify(value) as any;
           } catch (error) {
             console.error('Error getting item from storage:', error);
-            return null;
+            return null as any;
           }
         },
-        setItem: async (name, value) => {
+        setItem: async (name: string, value: string) => {
           try {
             const parsed = JSON.parse(value);
             await Storage.set(name, parsed);
@@ -82,14 +82,14 @@ export const useStoriesStore = create<StoriesState>()(
             console.error('Error setting item to storage:', error);
           }
         },
-        removeItem: async (name) => {
+        removeItem: async (name: string) => {
           try {
             await Storage.remove(name);
           } catch (error) {
             console.error('Error removing item from storage:', error);
           }
         },
-      },
+      } as any,
     }
   )
 );

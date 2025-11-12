@@ -12,24 +12,46 @@ import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { theme } from '../theme';
 import { ProductGrid } from '../components/store/ProductGrid';
-import { useStoreStore } from '../store/storeStore';
 import { useStore } from '../hooks/useStore';
+import { SkeletonLoader } from '../components/ui/SkeletonLoader';
+import { storeApi } from '../services/storeApi';
+import { SortFilterSheet, SortOption } from '../components/sheets/SortFilterSheet';
 
 import { useAuth } from '../hooks/useAuth';
 
 export default function StoreScreen() {
   const router = useRouter();
   const { isAuthenticated } = useAuth();
-  const { products, fetchProducts, isLoading, error } = useStoreStore();
   const { cartItems } = useStore();
   const [category, setCategory] = useState('all');
   const [searchQuery, setSearchQuery] = useState('');
+  const [sort, setSort] = useState<SortOption>('newest');
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [products, setProducts] = useState<any[]>([]);
+  const [filterOpen, setFilterOpen] = useState(false);
+
+  const loadProducts = React.useCallback(async () => {
+    if (!isAuthenticated) return;
+    setLoading(true);
+    setError(null);
+    try {
+      const params: any = {};
+      if (category && category !== 'all') params.category = category;
+      if (searchQuery) params.search = searchQuery;
+      if (sort) params.sort = sort;
+      const res = await storeApi.getStoreItems(params);
+      setProducts(res.items || []);
+    } catch (e: any) {
+      setError(e?.response?.data?.error || e.message || 'Failed to load items');
+    } finally {
+      setLoading(false);
+    }
+  }, [isAuthenticated, category, searchQuery, sort]);
 
   React.useEffect(() => {
-    if (isAuthenticated) {
-      fetchProducts();
-    }
-  }, [isAuthenticated, fetchProducts]);
+    loadProducts();
+  }, [loadProducts]);
 
   const categories = [
     { id: 'all', label: 'All Items', icon: '📦' },
@@ -38,11 +60,7 @@ export default function StoreScreen() {
     { id: 'shoes', label: 'Shoes', icon: '👟' },
   ];
 
-  const filteredProducts = products.filter(product => {
-    const matchesCategory = category === 'all' || product.category === category;
-    const matchesSearch = product.name.toLowerCase().includes(searchQuery.toLowerCase());
-    return matchesCategory && matchesSearch;
-  });
+  const filteredProducts = products; // already filtered via API
 
   if (!isAuthenticated) {
     return (
@@ -94,6 +112,9 @@ export default function StoreScreen() {
           onChangeText={setSearchQuery}
           placeholderTextColor="#9CA3AF"
         />
+        <TouchableOpacity onPress={() => setFilterOpen(true)} style={styles.filterButton}>
+          <Ionicons name="filter" size={20} color="#111827" />
+        </TouchableOpacity>
       </View>
 
       {/* Categories */}
@@ -124,9 +145,17 @@ export default function StoreScreen() {
       </ScrollView>
 
       {/* Loading State */}
-      {isLoading && (
-        <View style={styles.loadingContainer}>
-          <Text style={styles.loadingText}>Loading products...</Text>
+      {loading && (
+        <View style={{ paddingHorizontal: theme.spacing[4], paddingTop: theme.spacing[2] }}>
+          {/* 2x2 skeleton grid */}
+          <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: theme.spacing[2] }}>
+            <SkeletonLoader height={180} style={{ width: '47%', borderRadius: theme.borderRadius.xl }} />
+            <SkeletonLoader height={180} style={{ width: '47%', borderRadius: theme.borderRadius.xl }} />
+          </View>
+          <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
+            <SkeletonLoader height={180} style={{ width: '47%', borderRadius: theme.borderRadius.xl }} />
+            <SkeletonLoader height={180} style={{ width: '47%', borderRadius: theme.borderRadius.xl }} />
+          </View>
         </View>
       )}
 
@@ -134,14 +163,26 @@ export default function StoreScreen() {
       {error && (
         <View style={styles.errorContainer}>
           <Text style={styles.errorText}>{error}</Text>
-          <TouchableOpacity onPress={fetchProducts} style={styles.retryButton}>
+          <TouchableOpacity onPress={loadProducts} style={styles.retryButton}>
             <Text style={styles.retryText}>Retry</Text>
           </TouchableOpacity>
         </View>
       )}
 
       {/* Products Grid */}
-      {!isLoading && !error && <ProductGrid products={filteredProducts} />}
+      {!loading && !error && <ProductGrid products={filteredProducts} />}
+
+      {/* Sort & Filter Sheet */}
+      <SortFilterSheet
+        visible={filterOpen}
+        onClose={() => setFilterOpen(false)}
+        category={category}
+        sort={sort}
+        onApply={({ category: c, sort: s }) => {
+          setCategory(c);
+          setSort(s);
+        }}
+      />
     </SafeAreaView>
   );
 }
@@ -207,8 +248,36 @@ const styles = StyleSheet.create({
     fontSize: theme.typography.fontSize[14],
     color: '#111827',
   },
+  filterButton: {
+    marginLeft: theme.spacing[2],
+    padding: theme.spacing[2],
+    borderRadius: theme.borderRadius.full,
+    backgroundColor: '#F3F4F6',
+  },
   categoriesContainer: {
     marginBottom: theme.spacing[2],
+  },
+  authContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: theme.spacing[4],
+  },
+  authText: {
+    fontSize: theme.typography.fontSize[14],
+    color: '#6B7280',
+    marginBottom: theme.spacing[3],
+  },
+  loginButton: {
+    backgroundColor: theme.colors.primary,
+    paddingHorizontal: theme.spacing[4],
+    paddingVertical: theme.spacing[2],
+    borderRadius: theme.borderRadius.xl,
+  },
+  loginButtonText: {
+    color: 'white',
+    fontSize: theme.typography.fontSize[14],
+    fontWeight: theme.typography.fontWeight.semibold,
   },
   categoriesContent: {
     paddingHorizontal: theme.spacing[4],

@@ -29,7 +29,7 @@ export const ConflictResolver: React.FC<ConflictResolverProps> = ({
 }) => {
   const [conflicts, setConflicts] = useState<ConflictData[]>([]);
   const [resolving, setResolving] = useState<string | null>(null);
-  const { syncStatus } = useOfflineSync();
+  useOfflineSync();
 
   useEffect(() => {
     if (visible) {
@@ -69,7 +69,7 @@ export const ConflictResolver: React.FC<ConflictResolverProps> = ({
   const resolveConflict = async (
     conflictId: string,
     strategy: 'local_wins' | 'server_wins' | 'merge' | 'manual',
-    mergedData?: any
+    _mergedData?: any
   ) => {
     setResolving(conflictId);
 
@@ -91,7 +91,7 @@ export const ConflictResolver: React.FC<ConflictResolverProps> = ({
 
       Alert.alert('Success', 'Conflict resolved successfully');
 
-    } catch (error) {
+    } catch {
       Alert.alert('Error', 'Failed to resolve conflict');
     } finally {
       setResolving(null);

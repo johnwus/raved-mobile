@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState , useEffect } from 'react';
 import {
   View,
   Text,
@@ -15,21 +15,21 @@ import { Toggle } from '../components/ui/Toggle';
 import { useAuth } from '../hooks/useAuth';
 import { useTheme } from '../contexts/ThemeContext';
 import { userApi } from '../services/userApi';
-import { useEffect } from 'react';
+
 
 export default function ProfileSettingsScreen() {
   const router = useRouter();
   const { user, logout } = useAuth();
   const { isDark, toggleDarkMode } = useTheme();
   
-  const [privateAccount, setPrivateAccount] = useState(user?.isPrivate || false);
-  const [showActivity, setShowActivity] = useState(user?.showActivity ?? true);
-  const [readReceipts, setReadReceipts] = useState(user?.readReceipts ?? true);
-  const [allowDownloads, setAllowDownloads] = useState(user?.allowDownloads || false);
-  const [allowStorySharing, setAllowStorySharing] = useState(user?.allowStorySharing ?? true);
-  const [analytics, setAnalytics] = useState(user?.analytics ?? true);
-  const [personalizedAds, setPersonalizedAds] = useState(user?.personalizedAds ?? true);
-  const [loading, setLoading] = useState(false);
+  const [_privateAccount, _setPrivateAccount] = useState(user?.isPrivate || false);
+  const [_showActivity, _setShowActivity] = useState(user?.showActivity ?? true);
+  const [_readReceipts, _setReadReceipts] = useState(user?.readReceipts ?? true);
+  const [_allowDownloads, _setAllowDownloads] = useState(user?.allowDownloads || false);
+  const [_allowStorySharing, _setAllowStorySharing] = useState(user?.allowStorySharing ?? true);
+  const [_analytics, _setAnalytics] = useState(user?.analytics ?? true);
+  const [_personalizedAds, _setPersonalizedAds] = useState(user?.personalizedAds ?? true);
+  const [_loading, _setLoading] = useState(false);
 
   useEffect(() => {
     const loadSettings = async () => {
@@ -37,13 +37,13 @@ export default function ProfileSettingsScreen() {
         const response = await userApi.getUserSettings();
         if (response.success && response.settings) {
           const settings = response.settings;
-          setPrivateAccount(settings.isPrivate || false);
-          setShowActivity(settings.showOnlineStatus !== false);
-          setReadReceipts(settings.readReceipts !== false);
-          setAllowDownloads(settings.allowDownloads !== false);
-          setAllowStorySharing(settings.allowStorySharing !== false);
-          setAnalytics(settings.analytics !== false);
-          setPersonalizedAds(settings.personalizedAds !== false);
+          _setPrivateAccount(settings.isPrivate || false);
+          _setShowActivity(settings.showOnlineStatus !== false);
+          _setReadReceipts(settings.readReceipts !== false);
+          _setAllowDownloads(settings.allowDownloads !== false);
+          _setAllowStorySharing(settings.allowStorySharing !== false);
+          _setAnalytics(settings.analytics !== false);
+          _setPersonalizedAds(settings.personalizedAds !== false);
         }
       } catch (error) {
         console.error('Failed to load settings:', error);
@@ -54,48 +54,48 @@ export default function ProfileSettingsScreen() {
 
   const updateSetting = async (key: string, value: any) => {
     try {
-      setLoading(true);
+      _setLoading(true);
       await userApi.updateUserSettings({ [key]: value });
     } catch (error) {
       console.error(`Failed to update ${key}:`, error);
       Alert.alert('Error', `Failed to update ${key}`);
     } finally {
-      setLoading(false);
+      _setLoading(false);
     }
   };
 
-  const handlePrivateAccountChange = async (value: boolean) => {
-    setPrivateAccount(value);
+  const _handlePrivateAccountChange = async (value: boolean) => {
+    _setPrivateAccount(value);
     await updateSetting('isPrivate', value);
   };
 
-  const handleShowActivityChange = async (value: boolean) => {
-    setShowActivity(value);
+  const _handleShowActivityChange = async (value: boolean) => {
+    _setShowActivity(value);
     await updateSetting('showOnlineStatus', value);
   };
 
-  const handleReadReceiptsChange = async (value: boolean) => {
-    setReadReceipts(value);
+  const _handleReadReceiptsChange = async (value: boolean) => {
+    _setReadReceipts(value);
     await updateSetting('readReceipts', value);
   };
 
-  const handleAllowDownloadsChange = async (value: boolean) => {
-    setAllowDownloads(value);
+  const _handleAllowDownloadsChange = async (value: boolean) => {
+    _setAllowDownloads(value);
     await updateSetting('allowDownloads', value);
   };
 
-  const handleAllowStorySharingChange = async (value: boolean) => {
-    setAllowStorySharing(value);
+  const _handleAllowStorySharingChange = async (value: boolean) => {
+    _setAllowStorySharing(value);
     await updateSetting('allowStorySharing', value);
   };
 
-  const handleAnalyticsChange = async (value: boolean) => {
-    setAnalytics(value);
+  const _handleAnalyticsChange = async (value: boolean) => {
+    _setAnalytics(value);
     await updateSetting('analytics', value);
   };
 
-  const handlePersonalizedAdsChange = async (value: boolean) => {
-    setPersonalizedAds(value);
+  const _handlePersonalizedAdsChange = async (value: boolean) => {
+    _setPersonalizedAds(value);
     await updateSetting('personalizedAds', value);
   };
 
@@ -178,7 +178,7 @@ export default function ProfileSettingsScreen() {
     </TouchableOpacity>
   );
 
-  const ToggleItem = ({
+  const _ToggleItem = ({
     icon,
     label,
     description,

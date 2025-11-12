@@ -15,7 +15,6 @@ import { theme } from '../theme';
 import { Button } from '../components/ui/Button';
 import { useStore } from '../hooks/useStore';
 import { subscriptionsApi, SubscriptionPlan, SubscriptionStatus } from '../services/subscriptionsApi';
-import api from '../services/api';
 
 const premiumFeatures = [
   {
@@ -52,7 +51,7 @@ const premiumFeatures = [
 
 export default function SubscriptionScreen() {
   const router = useRouter();
-  const { isPremium } = useStore();
+  const { subscribeToPremium } = useStore();
   const [selectedPayment, setSelectedPayment] = useState<string | null>(null);
   const [plans, setPlans] = useState<SubscriptionPlan[]>([]);
   const [subscriptionStatus, setSubscriptionStatus] = useState<SubscriptionStatus | null>(null);
@@ -87,17 +86,12 @@ export default function SubscriptionScreen() {
   };
 
   const handleSubscribe = async () => {
-    if (!selectedPayment || !plans[0]) return;
-    
+    if (!plans[0]) return;
     try {
       setSubscribing(true);
-      // Initialize subscription payment
-      const response = await api.post('/subscriptions/initialize', {
-        plan: plans[0].id,
-        paymentMethod: selectedPayment,
-      });
-      // TODO: Handle payment redirect or confirmation based on response
-      console.log('Payment initialized:', response.data);
+      // Optimistic upgrade (dev/mock). In production, initialize payment instead.
+      await subscribeToPremium(plans[0].id as 'weekly' | 'monthly');
+      await loadData();
     } catch (error) {
       console.error('Failed to subscribe:', error);
     } finally {

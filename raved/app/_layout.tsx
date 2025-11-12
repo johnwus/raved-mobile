@@ -9,7 +9,7 @@ import { ErrorBoundary } from '../components/ErrorBoundary';
 import { StatusBar } from 'expo-status-bar';
 import * as Notifications from 'expo-notifications';
 import { useEffect } from 'react';
-import { Platform , LogBox} from 'react-native';
+import { LogBox} from 'react-native';
 
 LogBox.ignoreLogs([
   // React Native warnings
@@ -113,7 +113,7 @@ LogBox.ignoreLogs([
 if (__DEV__) {
   try {
     LogBox.ignoreLogs(['Warning:', 'Error:', 'UIFrameGuarded']);
-  } catch (error) {
+  } catch {
     console.log('LogBox.ignoreLogs not available');
   }
 }
@@ -142,11 +142,11 @@ export default function RootLayout() {
     requestPermissions();
 
     // Set up notification listeners
-    const notificationListener = Notifications.addNotificationReceivedListener(notification => {
+    const _notificationListener = Notifications.addNotificationReceivedListener(notification => {
       console.log('Notification received:', notification);
     });
 
-    const responseListener = Notifications.addNotificationResponseReceivedListener(response => {
+    const _responseListener = Notifications.addNotificationResponseReceivedListener(response => {
       console.log('Notification response:', response);
     });
 

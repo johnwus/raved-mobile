@@ -18,19 +18,62 @@ import { ErrorState } from '../../components/ui/ErrorState';
 import { useStoreStore } from '../../store/storeStore';
 import { useStore } from '../../hooks/useStore';
 import { formatCurrency } from '../../utils/formatters';
+import { SkeletonLoader } from '../../components/ui/SkeletonLoader';
+import { ShareSheet } from '../../components/sheets/ShareSheet';
 
 export default function ProductDetailScreen() {
   const router = useRouter();
   const params = useLocalSearchParams();
-  const { products, savedItems, addToCart, removeFromCart, saveProduct, unsaveProduct } = useStoreStore();
+  const { products, savedItems, addToCart, removeFromCart, saveProduct, unsaveProduct } = useStoreStore() as any;
   const { cartItems } = useStore();
   
   const productId = params.id as string;
-  const product = products.find(p => p.id === productId);
-  
+  const [product, setProduct] = useState<any>(products.find((p: any) => p.id === productId));
   const [selectedImageIndex, setSelectedImageIndex] = useState(0);
+  const [loading, setLoading] = useState(false);
+  const [shareOpen, setShareOpen] = useState(false);
+
+  React.useEffect(() => {
+    let mounted = true;
+    (async () => {
+      if (!productId) return;
+      if (!product) {
+        try {
+          setLoading(true);
+          const { storeApi } = await import('../../services/storeApi');
+          const res = await storeApi.getStoreItem(productId);
+          if (mounted) setProduct(res.item || res);
+        } catch (e) {
+          console.warn('Failed to load product', e);
+        } finally {
+          if (mounted) setLoading(false);
+        }
+      }
+    })();
+    return () => { mounted = false; };
+  }, [productId, product]);
   
-  if (!product) {
+  if (loading && !product) {
+    return (
+      <SafeAreaView style={styles.container}>
+        {/* Skeleton for product detail */}
+        <SkeletonLoader height={360} />
+        <View style={{ padding: theme.spacing[4], gap: 12 }}>
+          <SkeletonLoader height={20} style={{ width: '60%' }} />
+          <SkeletonLoader height={24} style={{ width: '40%' }} />
+          <View style={{ flexDirection: 'row', gap: 8 }}>
+            <SkeletonLoader height={20} style={{ width: 80 }} />
+            <SkeletonLoader height={20} style={{ width: 90 }} />
+          </View>
+          <SkeletonLoader height={14} style={{ width: '80%', marginTop: 8 }} />
+          <SkeletonLoader height={14} style={{ width: '70%', marginTop: 6 }} />
+          <SkeletonLoader height={14} style={{ width: '50%', marginTop: 6 }} />
+        </View>
+      </SafeAreaView>
+    );
+  }
+
+  if (!loading && !product) {
     return (
       <SafeAreaView style={styles.container}>
         <ErrorState
@@ -43,10 +86,10 @@ export default function ProductDetailScreen() {
     );
   }
 
-  const isSaved = savedItems.includes(product.id);
-  const isInCart = cartItems.some(item => item.productId === product.id);
+  const isSaved = savedItems?.includes?.(product.id) ?? false;
+  const isInCart = cartItems?.some?.(item => item.productId === product.id) ?? false;
   const similarProducts = products
-    .filter(p => p.id !== product.id && p.category === product.category)
+    .filter((p: any) => p.id !== product.id && p.category === product.category)
     .slice(0, 4);
 
   const handleSave = () => {
@@ -73,7 +116,7 @@ export default function ProductDetailScreen() {
           <Ionicons name="arrow-back" size={24} color="#111827" />
         </TouchableOpacity>
         <View style={styles.headerActions}>
-          <TouchableOpacity style={styles.headerButton}>
+          <TouchableOpacity style={styles.headerButton} onPress={() => setShareOpen(true)}>
             <Ionicons name="share-outline" size={24} color="#111827" />
           </TouchableOpacity>
           <TouchableOpacity style={styles.headerButton} onPress={handleSave}>
@@ -325,6 +368,13 @@ export default function ProductDetailScreen() {
           )}
         </View>
       </ScrollView>
+      {/* Share Sheet */}
+      <ShareSheet
+        visible={shareOpen}
+        onClose={() => setShareOpen(false)}
+        title={product.name}
+        url={`https://raved.app/product/${product.id}`}
+      />
     </SafeAreaView>
   );
 }

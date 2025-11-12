@@ -20,7 +20,7 @@ interface ThemeOption {
   name: string;
   description: string;
   icon: string;
-  colors: string[];
+  colors: readonly [string, string];
 }
 
 const themes: ThemeOption[] = [
@@ -70,8 +70,8 @@ const themes: ThemeOption[] = [
 
 export default function ThemesScreen() {
   const router = useRouter();
-  const { theme, setTheme } = useTheme();
-  const [selectedTheme, setSelectedTheme] = useState(theme);
+  const { theme: currentThemeName, setTheme } = useTheme();
+  const [selectedTheme, setSelectedTheme] = useState(currentThemeName);
 
   const { showToast } = useToastStore();
   
@@ -229,7 +229,7 @@ export default function ThemesScreen() {
           size="large"
           leftIcon={<Ionicons name="color-palette" size={16} color="white" />}
           style={styles.applyButton}
-          disabled={selectedTheme === theme}
+          disabled={selectedTheme === currentThemeName}
         />
 
         {/* Theme Info */}
@@ -238,7 +238,7 @@ export default function ThemesScreen() {
           <View style={styles.infoText}>
             <Text style={styles.infoTitle}>About Premium Themes</Text>
             <Text style={styles.infoDescription}>
-              Premium themes change the app's color scheme and visual style. Your selected theme will be applied across all screens and features.
+              Premium themes change the app’s color scheme and visual style. Your selected theme will be applied across all screens and features.
             </Text>
           </View>
         </View>

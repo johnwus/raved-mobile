@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -67,10 +67,15 @@ export default function SearchScreen() {
         console.error('Search error:', error);
         // Fallback to local search on error
         const query = searchQuery.toLowerCase();
-        const userResults = mockUsers.filter(user =>
-          user.name.toLowerCase().includes(query) ||
-          user.faculty.toLowerCase().includes(query)
-        );
+        const userResults = mockUsers
+          .filter(user => user.name.toLowerCase().includes(query) || user.faculty.toLowerCase().includes(query))
+          .map(u => ({
+            id: u.id,
+            name: u.name,
+            username: u.name.toLowerCase().replace(/\s+/g, ''),
+            avatar: u.avatar || '',
+            faculty: u.faculty,
+          }));
         const postResults = posts.filter(post =>
           post.caption.toLowerCase().includes(query) ||
           post.user.name.toLowerCase().includes(query)
@@ -115,7 +120,9 @@ export default function SearchScreen() {
     <TouchableOpacity
       key={user.id}
       style={styles.resultCard}
-      onPress={() => {}}
+      onPress={() => {
+        router.push('/connections' as any);
+      }}
     >
       <Avatar uri={user.avatar || ''} size={40} />
       <View style={styles.resultInfo}>
@@ -247,12 +254,12 @@ export default function SearchScreen() {
         ) : !hasResults && searchQuery.trim() ? (
           <EmptyState
             icon="search-outline"
-            title="No results found"
+            title="No results. Try a different keyword or filter."
           />
         ) : !searchQuery.trim() ? (
           <EmptyState
             icon="search-outline"
-            title="Start typing to search"
+            title="Search people, posts, or tags"
           />
         ) : activeFilter === 'all' ? (
           <>
@@ -276,11 +283,11 @@ export default function SearchScreen() {
             )}
           </>
         ) : activeFilter === 'users' ? (
-          Array.isArray(results) ? results.map(renderUserResult) : null
+          Array.isArray(results) ? (results as { id: string; name: string; avatar?: string; faculty?: string; username?: string }[]).map(renderUserResult) : null
         ) : activeFilter === 'posts' ? (
-          Array.isArray(results) ? results.map(renderPostResult) : null
+          Array.isArray(results) ? (results as Post[]).map(renderPostResult) : null
         ) : (
-          Array.isArray(results) ? results.map(renderTagResult) : null
+          Array.isArray(results) ? (results as string[]).map(renderTagResult) : null
         )}
       </ScrollView>
     </SafeAreaView>

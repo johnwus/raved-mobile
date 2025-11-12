@@ -17,7 +17,7 @@ import { Input } from '../components/ui/Input';
 import { Avatar } from '../components/ui/Avatar';
 import { useAuth } from '../hooks/useAuth';
 
-const faculties = [
+const _faculties = [
   'Arts & Humanities',
   'Business',
   'Engineering',
@@ -29,12 +29,12 @@ const faculties = [
 
 export default function EditProfileScreen() {
   const router = useRouter();
-  const { user, logout } = useAuth();
+  const { user } = useAuth();
   
   const [name, setName] = useState(user?.name || '');
   const [username, setUsername] = useState(user?.username?.replace('@', '') || '');
   const [bio, setBio] = useState(user?.bio || '');
-  const [faculty, setFaculty] = useState(user?.faculty || '');
+  const [faculty] = useState(user?.faculty || '');
   const [location, setLocation] = useState(user?.location || '');
   const [website, setWebsite] = useState(user?.website || '');
 
@@ -140,7 +140,6 @@ export default function EditProfileScreen() {
             onChangeText={setWebsite}
             placeholder="https://yourwebsite.com"
             keyboardType="url"
-            autoCapitalize="none"
             style={styles.input}
           />
         </View>

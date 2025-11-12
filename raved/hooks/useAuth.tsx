@@ -3,6 +3,7 @@ import { Storage } from '../services/storage';
 import { User } from '../types';
 import api, { login as apiLogin } from '../services/api';
 import { NotificationService } from '../services/notificationService';
+import authApi from '../services/authApi';
 
 interface AuthContextType {
   user: User | null;
@@ -77,8 +78,22 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       await Storage.set('user', userData);
       await Storage.set('authToken', data.token);
       await Storage.set('refreshToken', data.refreshToken);
-      await Storage.set('loggedIn', true);
+      // Respect "remember me"
+      try {
+        const remember = await Storage.get<boolean>('rememberMe', false);
+        await Storage.set('loggedIn', !!remember);
+      } catch {
+        await Storage.set('loggedIn', true);
+      }
       setRequiresTwoFactor(false);
+
+      // Ensure socket uses fresh auth token
+      try {
+        const { socketService } = await import('../services/socket');
+        socketService.updateAuthToken(data.token);
+      } catch (e) {
+        console.warn('Socket token update failed:', e);
+      }
 
       // Register for push notifications after successful login
       try {
@@ -102,35 +117,57 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     await Storage.remove('pendingUserId');
   };
 
-  const register = async (userData: any) => {
-    // Mock registration - in real app, this would call registration API
-    await new Promise(resolve => setTimeout(resolve, 1000));
-    const newUser: User = {
-      id: Date.now().toString(),
-      name: `${userData.firstName} ${userData.lastName}`,
-      username: userData.username,
-      avatar: 'https://i.imgur.com/jL1aT9i.jpg',
-      bio: userData.bio || '',
-      faculty: userData.faculty || '',
-      location: userData.location || '',
-      website: '',
-      followers: 0,
-      following: 0,
-      theme: 'default',
-      isPrivate: false,
-      showActivity: true,
-      readReceipts: true,
-      allowDownloads: false,
-      allowStorySharing: true,
-      analytics: true,
-      personalizedAds: true,
-      language: 'en',
-      dateFormat: 'DD/MM/YYYY',
-      currency: 'GHS',
-    };
-    setUser(newUser);
-    await Storage.set('user', newUser);
-    await Storage.set('loggedIn', true);
+  const register = async (form: any) => {
+    try {
+      const res = await (authApi.register as any)({
+        email: form.email,
+        phone: form.phone,
+        password: form.password,
+        firstName: form.firstName,
+        lastName: form.lastName,
+        faculty: form.faculty,
+        username: form.username,
+      });
+
+      const userData: User = {
+        id: res.user.id,
+        name: `${res.user.firstName} ${res.user.lastName}`,
+        username: res.user.username,
+        avatar: '',
+        bio: '',
+        faculty: form.faculty || '',
+        location: '',
+        website: '',
+        followers: 0,
+        following: 0,
+        theme: 'default',
+        isPrivate: false,
+        showActivity: true,
+        readReceipts: true,
+        allowDownloads: false,
+        allowStorySharing: true,
+        analytics: true,
+        personalizedAds: true,
+        language: 'en',
+        dateFormat: 'DD/MM/YYYY',
+        currency: 'GHS',
+      };
+
+      setUser(userData);
+      await Storage.set('user', userData);
+      await Storage.set('authToken', res.token);
+      await Storage.set('refreshToken', res.refreshToken);
+      // Respect remember me for registration as well
+      try {
+        const remember = await Storage.get<boolean>('rememberMe', false);
+        await Storage.set('loggedIn', !!remember);
+      } catch {
+        await Storage.set('loggedIn', true);
+      }
+    } catch (e: any) {
+      console.error('Registration error:', e);
+      throw new Error(e.response?.data?.error || 'Registration failed');
+    }
   };
 
   const verifyTwoFactor = async (userId: string, code: string) => {
@@ -170,9 +207,23 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       await Storage.set('user', userData);
       await Storage.set('authToken', data.token);
       await Storage.set('refreshToken', data.refreshToken);
-      await Storage.set('loggedIn', true);
+      // Respect "remember me"
+      try {
+        const remember = await Storage.get<boolean>('rememberMe', false);
+        await Storage.set('loggedIn', !!remember);
+      } catch {
+        await Storage.set('loggedIn', true);
+      }
       setRequiresTwoFactor(false);
       await Storage.remove('pendingUserId');
+
+      // Ensure socket uses fresh auth token after 2FA
+      try {
+        const { socketService } = await import('../services/socket');
+        socketService.updateAuthToken(data.token);
+      } catch (e) {
+        console.warn('Socket token update failed:', e);
+      }
 
       // Register for push notifications after successful 2FA verification
       try {

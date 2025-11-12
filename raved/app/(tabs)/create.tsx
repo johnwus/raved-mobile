@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useRef, useState } from 'react';
 import {
   View,
   Text,
@@ -16,13 +16,13 @@ import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { theme } from '../../theme';
 import { Button } from '../../components/ui/Button';
-import { Input } from '../../components/ui/Input';
 import { Avatar } from '../../components/ui/Avatar';
-import { Badge } from '../../components/ui/Badge';
 import { useAuth } from '../../hooks/useAuth';
-import { locationSuggestions, popularTags } from '../../utils/mockData';
+import { locationSuggestions } from '../../utils/mockData';
 import { usePostsStore } from '../../store/postsStore';
 import * as ImagePicker from 'expo-image-picker';
+import * as Location from 'expo-location';
+import { uploadApi } from '../../services/uploadApi';
 
 const popularTagsList = ['OOTD', 'CampusStyle', 'Vintage', 'Thrifted', 'StudyFit'];
 
@@ -39,6 +39,10 @@ export default function CreatePostScreen() {
   const [tags, setTags] = useState<string[]>([]);
   const [tagInput, setTagInput] = useState('');
   const [showLocationSuggestions, setShowLocationSuggestions] = useState(false);
+  const [locationResults, setLocationResults] = useState<any[]>([]);
+  const [locationLoading, setLocationLoading] = useState(false);
+  const locationDebounce = useRef<any>(null);
+  const [_validSale, setValidSale] = useState(true);
   
   // Marketplace state
   const [isForSale, setIsForSale] = useState(false);
@@ -50,7 +54,9 @@ export default function CreatePostScreen() {
   const [paymentMethods, setPaymentMethods] = useState({
     momo: false,
     cash: false,
+    bankTransfer: false,
   });
+  const [negotiable, setNegotiable] = useState(false);
   const [phoneNumber, setPhoneNumber] = useState('');
   const [meetupLocation, setMeetupLocation] = useState('');
 
@@ -77,7 +83,7 @@ export default function CreatePostScreen() {
         }));
         setMedia([...media, ...newMedia]);
       }
-    } catch (error) {
+    } catch {
       Alert.alert('Error', 'Failed to pick media');
     }
   };
@@ -104,18 +110,50 @@ export default function CreatePostScreen() {
     }
   };
 
+  // Validate sale fields when for-sale is enabled
+  const validateSale = () => {
+    if (!isForSale) return true;
+    const priceNum = parseFloat(price);
+    const hasPrice = !isNaN(priceNum) && priceNum > 0;
+    const validCategory = ['clothing','shoes','accessories','bags','jewelry'].includes(category);
+    const validCondition = ['new','like-new','good','fair'].includes(condition);
+    const validPhone = phoneNumber ? /^\+?\d{7,15}$/.test(phoneNumber.replace(/[\s-]/g, '')) : true;
+    const ok = hasPrice && validCategory && validCondition && validPhone;
+    setValidSale(ok);
+    return ok;
+  };
+
   const handlePost = async () => {
     if (!caption.trim() && media.length === 0) {
       Alert.alert('Error', 'Please add a caption or media to your post');
       return;
     }
 
+    // Client-side validation
+    if (!validateSale()) {
+      Alert.alert('Missing details', 'Please provide a valid price, category, condition and phone (if provided) for sale items.');
+      return;
+    }
+
     setLoading(true);
     try {
+      // Upload media to backend if present
+      let uploadedMedia: { url: string; type: 'image' | 'video' }[] = [];
+      if (media.length > 0) {
+        const uploads = await Promise.all(
+          media.map(async (m) => {
+            const blob = await (await fetch(m.uri)).blob();
+            const res = m.type === 'video' ? await uploadApi.uploadVideo(blob as any) : await uploadApi.uploadImage(blob as any);
+            return { url: res.url, type: m.type } as { url: string; type: 'image' | 'video' };
+          })
+        );
+        uploadedMedia = uploads;
+      }
+
       const postData = {
         type: media.length > 0 ? (media[0].type === 'video' ? 'video' : media.length > 1 ? 'carousel' : 'image') : 'text',
         caption: caption.trim(),
-        media: media.map(m => ({ uri: m.uri, type: m.type })),
+        media: uploadedMedia,
         location: location || undefined,
         tags: tags,
         visibility: 'public' as const,
@@ -126,10 +164,10 @@ export default function CreatePostScreen() {
           category,
           condition,
           size: size || undefined,
-          paymentMethods: Object.keys(paymentMethods).filter(key => paymentMethods[key as keyof typeof paymentMethods]),
+          paymentMethods: Object.entries(paymentMethods).filter(([,v]) => v).map(([k]) => k),
           meetupLocation: meetupLocation || undefined,
           sellerPhone: phoneNumber || undefined,
-          negotiable: false,
+          negotiable,
         } : undefined,
       };
 
@@ -250,7 +288,29 @@ export default function CreatePostScreen() {
         <View style={styles.sectionCard}>
           <View style={styles.sectionHeader}>
             <Text style={styles.sectionTitle}>📍 Location</Text>
-            <TouchableOpacity>
+            <TouchableOpacity
+              onPress={async () => {
+                try {
+                  const { status } = await Location.requestForegroundPermissionsAsync();
+                  if (status !== 'granted') {
+                    Alert.alert('Permission required', 'Location permission is needed.');
+                    return;
+                  }
+                  const pos = await Location.getCurrentPositionAsync({});
+                  // Try reverse geocoding via geocoding service if configured
+                  try {
+                    const { geocoding } = await import('../../services/geocoding');
+                    const results = await geocoding.search(`${pos.coords.latitude}, ${pos.coords.longitude}`);
+                    if (results[0]?.name) setLocation(results[0].name);
+                    else setLocation('Current location');
+                  } catch {
+                    setLocation('Current location');
+                  }
+                } catch (e) {
+                  console.error('Use current location failed', e);
+                }
+              }}
+            >
               <Text style={styles.locationAction}>
                 <Ionicons name="locate" size={12} /> Use current location
               </Text>
@@ -264,17 +324,35 @@ export default function CreatePostScreen() {
               placeholder="Where are you? (e.g., Campus Library, Downtown Mall...)"
               placeholderTextColor="#9CA3AF"
               value={location}
-              onChangeText={setLocation}
+              onChangeText={(text) => {
+                setLocation(text);
+                setShowLocationSuggestions(true);
+                if (locationDebounce.current) clearTimeout(locationDebounce.current);
+                locationDebounce.current = setTimeout(async () => {
+                  try {
+                    setLocationLoading(true);
+                    const { geocoding } = await import('../../services/geocoding');
+                    const results = await geocoding.search(text);
+                    setLocationResults(results);
+                  } catch {}
+                  finally {
+                    setLocationLoading(false);
+                  }
+                }, 300);
+              }}
               onFocus={() => setShowLocationSuggestions(true)}
             />
           </View>
 
           {showLocationSuggestions && location && (
             <View style={styles.locationSuggestions}>
-              {locationSuggestions
-                .filter(s => s.name.toLowerCase().includes(location.toLowerCase()))
+              {locationLoading && (
+                <Text style={{ padding: 8, color: '#6B7280' }}>Searching…</Text>
+              )}
+              {(locationResults.length ? locationResults : locationSuggestions)
+                .filter((s: any) => (s.name || '').toLowerCase().includes(location.toLowerCase()))
                 .slice(0, 5)
-                .map((suggestion, index) => (
+                .map((suggestion: any, index: number) => (
                   <TouchableOpacity
                     key={index}
                     style={styles.locationSuggestion}
@@ -286,9 +364,11 @@ export default function CreatePostScreen() {
                     <Ionicons name="location" size={16} color={theme.colors.primary} />
                     <View style={styles.suggestionInfo}>
                       <Text style={styles.suggestionName}>{suggestion.name}</Text>
-                      <Text style={styles.suggestionDetails}>
-                        {suggestion.type} • {suggestion.distance}
-                      </Text>
+                      {!!suggestion.type && (
+                        <Text style={styles.suggestionDetails}>
+                          {suggestion.type}
+                        </Text>
+                      )}
                     </View>
                   </TouchableOpacity>
                 ))}
@@ -374,17 +454,55 @@ export default function CreatePostScreen() {
                   </View>
                   <View style={styles.saleInput}>
                     <Text style={styles.saleLabel}>Condition</Text>
-                    <View style={styles.saleSelect}>
-                      <Text style={styles.saleSelectText}>
-                        {condition.charAt(0).toUpperCase() + condition.slice(1)}
-                      </Text>
-                      <Ionicons name="chevron-down" size={16} color={theme.colors.success} />
+                    <View style={styles.selectChips}>
+                      {['new','like-new','good','fair'].map((c) => (
+                        <TouchableOpacity key={c} style={[styles.chip, condition===c && styles.chipActive]} onPress={() => setCondition(c)}>
+                          <Text style={[styles.chipText, condition===c && styles.chipTextActive]}>{c==='like-new' ? 'Like New' : c.charAt(0).toUpperCase()+c.slice(1)}</Text>
+                        </TouchableOpacity>
+                      ))}
                     </View>
                   </View>
                 </View>
 
+                <View style={styles.saleRow}>
+                  <View style={styles.saleInput}>
+                    <Text style={styles.saleLabel}>Category</Text>
+                    <View style={styles.selectChips}>
+                      {['clothing','shoes','accessories','bags','jewelry'].map((cat) => (
+                        <TouchableOpacity key={cat} style={[styles.chip, category===cat && styles.chipActive]} onPress={() => setCategory(cat)}>
+                          <Text style={[styles.chipText, category===cat && styles.chipTextActive]}>{cat.charAt(0).toUpperCase()+cat.slice(1)}</Text>
+                        </TouchableOpacity>
+                      ))}
+                    </View>
+                  </View>
+                  <View style={styles.saleInput}>
+                    <Text style={styles.saleLabel}>Size</Text>
+                    <View style={styles.selectChips}>
+                      {['XS','S','M','L','XL','XXL','One Size'].map((s) => (
+                        <TouchableOpacity key={s} style={[styles.chip, size===s && styles.chipActive]} onPress={() => setSize(s)}>
+                          <Text style={[styles.chipText, size===s && styles.chipTextActive]}>{s}</Text>
+                        </TouchableOpacity>
+                      ))}
+                    </View>
+                  </View>
+                </View>
+
+                <View style={styles.saleRow}>
+                  <View style={styles.saleInput}>
+                    <Text style={styles.saleLabel}>Item Description</Text>
+                    <TextInput
+                      style={[styles.saleInputField, { minHeight: 80, textAlignVertical: 'top' }]}
+                      placeholder="Describe the item..."
+                      placeholderTextColor="#9CA3AF"
+                      value={itemDescription}
+                      onChangeText={setItemDescription}
+                      multiline
+                    />
+                  </View>
+                </View>
+
                 <View style={styles.paymentMethods}>
-                  <Text style={styles.paymentLabel}>💳 Payment Methods Accepted</Text>
+                  <Text style={styles.paymentLabel}>💳 Payment & Contact</Text>
                   <View style={styles.paymentOptions}>
                     <View style={styles.paymentOption}>
                       <Switch
@@ -402,6 +520,46 @@ export default function CreatePostScreen() {
                       />
                       <Text style={styles.paymentText}>Cash (In Person)</Text>
                     </View>
+                    <View style={styles.paymentOption}>
+                      <Switch
+                        value={paymentMethods.bankTransfer}
+                        onValueChange={value => setPaymentMethods(prev => ({ ...prev, bankTransfer: value }))}
+                        trackColor={{ false: '#D1D5DB', true: theme.colors.success }}
+                      />
+                      <Text style={styles.paymentText}>Bank Transfer</Text>
+                    </View>
+                    <View style={styles.paymentOption}>
+                      <Switch
+                        value={negotiable}
+                        onValueChange={setNegotiable}
+                        trackColor={{ false: '#D1D5DB', true: theme.colors.success }}
+                      />
+                      <Text style={styles.paymentText}>Price Negotiable</Text>
+                    </View>
+                  </View>
+                </View>
+
+                <View style={styles.saleRow}>
+                  <View style={styles.saleInput}>
+                    <Text style={styles.saleLabel}>Seller Phone</Text>
+                    <TextInput
+                      style={styles.saleInputField}
+                      placeholder="0241234567"
+                      placeholderTextColor="#9CA3AF"
+                      value={phoneNumber}
+                      onChangeText={setPhoneNumber}
+                      keyboardType="phone-pad"
+                    />
+                  </View>
+                  <View style={styles.saleInput}>
+                    <Text style={styles.saleLabel}>Meetup Location</Text>
+                    <TextInput
+                      style={styles.saleInputField}
+                      placeholder="Campus Library / Negotiable"
+                      placeholderTextColor="#9CA3AF"
+                      value={meetupLocation}
+                      onChangeText={setMeetupLocation}
+                    />
                   </View>
                 </View>
               </View>
@@ -797,6 +955,28 @@ const styles = StyleSheet.create({
   },
   paymentMethods: {
     gap: theme.spacing[3],
+  },
+  selectChips: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: theme.spacing[2],
+  },
+  chip: {
+    paddingHorizontal: theme.spacing[3],
+    paddingVertical: theme.spacing[1.5],
+    borderRadius: theme.borderRadius.full,
+    backgroundColor: '#F3F4F6',
+  },
+  chipActive: {
+    backgroundColor: theme.colors.success,
+  },
+  chipText: {
+    fontSize: theme.typography.fontSize[12],
+    color: '#111827',
+    fontWeight: theme.typography.fontWeight.medium,
+  },
+  chipTextActive: {
+    color: 'white',
   },
   paymentLabel: {
     fontSize: theme.typography.fontSize[12],

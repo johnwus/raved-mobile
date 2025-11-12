@@ -7,6 +7,8 @@ export interface Message {
     id: string;
     name: string;
     avatar?: string;
+    username?: string;
+    avatarUrl?: string;
   };
   content: string;
   type: 'text' | 'image' | 'file';

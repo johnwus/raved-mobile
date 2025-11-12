@@ -2,6 +2,7 @@ import React, { useState, useContext, createContext, useEffect } from 'react';
 import { StoreItem, CartItem } from '../types';
 import { storeApi } from '../services/storeApi';
 import { useAuth } from './useAuth';
+import { subscriptionsApi } from '../services/subscriptionsApi';
 
 interface StoreContextType {
   isPremium: boolean;
@@ -10,7 +11,8 @@ interface StoreContextType {
   loading: boolean;
   addToCart: (item: StoreItem) => void;
   removeFromCart: (productId: string) => void;
-  subscribeToPremium: () => Promise<void>;
+  subscribeToPremium: (plan?: 'weekly' | 'monthly') => Promise<void>;
+  refreshSubscriptionStatus: () => Promise<void>;
 }
 
 const StoreContext = createContext<StoreContextType | undefined>(undefined);
@@ -23,26 +25,39 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const { isAuthenticated } = useAuth();
 
   useEffect(() => {
-    const fetchStoreItems = async () => {
+    const bootstrap = async () => {
       setLoading(true);
       try {
-        const response = await storeApi.getStoreItems();
-        setStoreItems(response.items || []);
+        if (isAuthenticated) {
+          // Fetch subscription status
+          const status = await subscriptionsApi.getSubscriptionStatus();
+          setIsPremium(!!status.isPremium);
+          // Fetch store items
+          const response = await storeApi.getStoreItems();
+          setStoreItems(response.items || []);
+        } else {
+          setIsPremium(false);
+          setStoreItems([]);
+        }
       } catch (error) {
-        console.error('Failed to fetch store items:', error);
+        console.error('Init store context failed:', error);
         setStoreItems([]);
       } finally {
         setLoading(false);
       }
     };
 
-    if (isAuthenticated) {
-      fetchStoreItems();
-    } else {
-      setStoreItems([]);
-      setLoading(false);
-    }
+    bootstrap();
   }, [isAuthenticated]);
+
+  const refreshSubscriptionStatus = async () => {
+    try {
+      const status = await subscriptionsApi.getSubscriptionStatus();
+      setIsPremium(!!status.isPremium);
+    } catch (e) {
+      console.error('Failed to refresh subscription status:', e);
+    }
+  };
 
   const addToCart = (item: StoreItem) => {
     setCartItems(prev => {
@@ -62,9 +77,17 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     setCartItems(prev => prev.filter(item => item.productId !== productId));
   };
 
-  const subscribeToPremium = async () => {
-    await new Promise(resolve => setTimeout(resolve, 1500));
+  const subscribeToPremium = async (plan: 'weekly' | 'monthly' = 'weekly') => {
+    // Optimistically set premium true
     setIsPremium(true);
+    try {
+      await subscriptionsApi.upgrade(plan);
+    } catch (error) {
+      console.error('Upgrade failed, reverting premium flag', error);
+      // Revert on failure
+      setIsPremium(false);
+      throw error;
+    }
   };
 
   return (
@@ -76,6 +99,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       addToCart,
       removeFromCart,
       subscribeToPremium,
+      refreshSubscriptionStatus,
     }}>
       {children}
     </StoreContext.Provider>

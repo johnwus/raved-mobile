@@ -7,8 +7,8 @@ export interface Event {
   date: string;
   time: string;
   location: string;
-  category: 'academic' | 'social' | 'sports' | 'cultural' | 'networking' | 'other';
-  audience: 'all' | 'faculty' | 'graduate' | 'undergraduate';
+  category: 'academic' | 'social' | 'sports' | 'cultural' | 'networking' | 'other' | 'fashion' | 'workshop';
+  audience: 'all' | 'faculty' | 'graduate' | 'undergraduate' | 'alumni' | 'public';
   organizer: {
     id: string;
     name: string;
@@ -29,8 +29,8 @@ export interface CreateEventData {
   date: string;
   time: string;
   location: string;
-  category: 'academic' | 'social' | 'sports' | 'cultural' | 'networking' | 'other';
-  audience: 'all' | 'faculty' | 'graduate' | 'undergraduate';
+  category: 'academic' | 'social' | 'sports' | 'cultural' | 'networking' | 'other' | 'fashion' | 'workshop';
+  audience: 'all' | 'faculty' | 'graduate' | 'undergraduate' | 'alumni' | 'public';
   maxAttendees?: number;
   image?: string;
   tags?: string[];
@@ -63,7 +63,7 @@ export const eventsApi = {
   },
 
   // Create event
-  createEvent: async (eventData: CreateEventData) => {
+  createEvent: async (eventData: CreateEventData | FormData) => {
     const response = await api.post('/events', eventData);
     return response.data;
   },

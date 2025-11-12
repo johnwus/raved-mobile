@@ -12,7 +12,6 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import { LinearGradient } from 'expo-linear-gradient';
 import { theme } from '../theme';
 
 export default function HelpScreen() {
@@ -47,7 +46,7 @@ export default function HelpScreen() {
       } else {
         Alert.alert('Email Support', `Email: ${email}\n\nPlease contact us at this address.`);
       }
-    } catch (error) {
+    } catch {
       Alert.alert('Email Support', `Email: ${email}\n\nPlease contact us at this address.`);
     }
   };

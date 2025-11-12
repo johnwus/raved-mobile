@@ -90,6 +90,17 @@ export const postsApi = {
     return response.data;
   },
 
+  // Save/Unsave (bookmarks)
+  savePost: async (postId: string) => {
+    const response = await api.post(`/posts/${postId}/save`);
+    return response.data;
+  },
+
+  unsavePost: async (postId: string) => {
+    const response = await api.delete(`/posts/${postId}/save`);
+    return response.data;
+  },
+
   // Report operations
   reportPost: async (postId: string, reason: string) => {
     const response = await api.post(`/posts/${postId}/report`, { reason });

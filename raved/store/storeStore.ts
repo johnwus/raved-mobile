@@ -35,24 +35,34 @@ export const useStoreStore = create<StoreState>()(
         try {
           set({ isLoading: true, error: null });
           await storeApi.addToCart(productId, quantity);
-
-          // Update local state optimistically
-          set((state) => {
-            const existingItem = state.cart.find(item => item.productId === productId);
-            if (existingItem) {
-              return {
-                cart: state.cart.map(item =>
-                  item.productId === productId
-                    ? { ...item, quantity: item.quantity + quantity }
-                    : item
-                ),
-              };
-            } else {
-              return {
-                cart: [...state.cart, { productId: productId, quantity }],
-              };
-            }
-          });
+          // Refresh from server to get authoritative cartItem ids/quantities
+          try {
+            const data = await storeApi.getUserCart();
+            const normalized = (data.items || []).map((ci: any) => ({
+              id: ci.id || ci.cartItemId,
+              productId: ci.product?.id || ci.productId,
+              quantity: ci.quantity,
+            }));
+            set({ cart: normalized });
+          } catch (e) {
+            // Fallback optimistic update
+            set((state) => {
+              const existingItem = state.cart.find(item => item.productId === productId);
+              if (existingItem) {
+                return {
+                  cart: state.cart.map(item =>
+                    item.productId === productId
+                      ? { ...item, quantity: item.quantity + quantity }
+                      : item
+                  ),
+                };
+              } else {
+                return {
+                  cart: [...state.cart, { productId: productId, quantity }],
+                };
+              }
+            });
+          }
         } catch (error: any) {
           set({ error: error.message || 'Failed to add item to cart' });
         } finally {
@@ -63,16 +73,30 @@ export const useStoreStore = create<StoreState>()(
       removeFromCart: async (productId) => {
         try {
           set({ isLoading: true, error: null });
-          // Find cart item ID from local state
-          const cartItem = get().cart.find(item => item.productId === productId);
+          // Ensure we have latest cart ids
+          let cartItem = get().cart.find(item => item.productId === productId);
+          if (!cartItem) {
+            const data = await storeApi.getUserCart();
+            const normalized = (data.items || []).map((ci: any) => ({
+              id: ci.id || ci.cartItemId,
+              productId: ci.product?.id || ci.productId,
+              quantity: ci.quantity,
+            }));
+            set({ cart: normalized });
+            cartItem = normalized.find(i => i.productId === productId);
+          }
           if (cartItem && cartItem.id) {
             await storeApi.removeFromCart(cartItem.id);
           }
 
-          // Update local state
-          set((state) => ({
-            cart: state.cart.filter(item => item.productId !== productId),
+          // Refresh cart from server
+          const fresh = await storeApi.getUserCart();
+          const normalizedFresh = (fresh.items || []).map((ci: any) => ({
+            id: ci.id || ci.cartItemId,
+            productId: ci.product?.id || ci.productId,
+            quantity: ci.quantity,
           }));
+          set({ cart: normalizedFresh });
         } catch (error: any) {
           set({ error: error.message || 'Failed to remove item from cart' });
         } finally {
@@ -83,18 +107,30 @@ export const useStoreStore = create<StoreState>()(
       updateCartQuantity: async (productId, quantity) => {
         try {
           set({ isLoading: true, error: null });
-          // Find cart item ID from local state
-          const cartItem = get().cart.find(item => item.productId === productId);
+          // Ensure we have latest cart ids
+          let cartItem = get().cart.find(item => item.productId === productId);
+          if (!cartItem) {
+            const data = await storeApi.getUserCart();
+            const normalized = (data.items || []).map((ci: any) => ({
+              id: ci.id || ci.cartItemId,
+              productId: ci.product?.id || ci.productId,
+              quantity: ci.quantity,
+            }));
+            set({ cart: normalized });
+            cartItem = normalized.find(i => i.productId === productId);
+          }
           if (cartItem && cartItem.id) {
             await storeApi.updateCartItem(cartItem.id, quantity);
           }
 
-          // Update local state
-          set((state) => ({
-            cart: state.cart.map(item =>
-              item.productId === productId ? { ...item, quantity } : item
-            ),
+          // Refresh cart from server
+          const fresh = await storeApi.getUserCart();
+          const normalizedFresh = (fresh.items || []).map((ci: any) => ({
+            id: ci.id || ci.cartItemId,
+            productId: ci.product?.id || ci.productId,
+            quantity: ci.quantity,
           }));
+          set({ cart: normalizedFresh });
         } catch (error: any) {
           set({ error: error.message || 'Failed to update cart quantity' });
         } finally {
@@ -102,16 +138,36 @@ export const useStoreStore = create<StoreState>()(
         }
       },
 
-      saveProduct: (productId) => {
-        set((state) => ({
-          savedItems: [...state.savedItems, productId],
-        }));
+      saveProduct: async (productId) => {
+        // Optimistic update
+        set((state) => ({ savedItems: [...state.savedItems, productId] }));
+        try {
+          await storeApi.saveItem(productId);
+        } catch (error) {
+          console.warn('Save product failed, queueing for offline sync:', error);
+          try {
+            const { default: syncManager } = await import('../services/syncManager');
+            await syncManager.queueRequest('POST', `/items/${productId}/save`);
+          } catch (e) {
+            console.error('Failed to queue product save:', e);
+          }
+        }
       },
 
-      unsaveProduct: (productId) => {
-        set((state) => ({
-          savedItems: state.savedItems.filter(id => id !== productId),
-        }));
+      unsaveProduct: async (productId) => {
+        // Optimistic update
+        set((state) => ({ savedItems: state.savedItems.filter(id => id !== productId) }));
+        try {
+          await storeApi.unsaveItem(productId);
+        } catch (error) {
+          console.warn('Unsave product failed, queueing for offline sync:', error);
+          try {
+            const { default: syncManager } = await import('../services/syncManager');
+            await syncManager.queueRequest('DELETE', `/items/${productId}/save`);
+          } catch (e) {
+            console.error('Failed to queue product unsave:', e);
+          }
+        }
       },
 
       clearCart: async () => {

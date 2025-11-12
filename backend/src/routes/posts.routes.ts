@@ -10,6 +10,9 @@ import {
   getFacultyPosts,
   getPostSuggestions,
   getTrendingPosts,
+  savePost,
+  unsavePost,
+  sharePost,
 } from '../controllers/posts.controller';
 import { authenticate } from '../middleware/auth.middleware';
 import { postRateLimit, commentRateLimit, interactionRateLimit } from '../middleware/rate-limit.middleware';
@@ -33,6 +36,13 @@ router.get('/faculty/:facultyId', authenticate, getFacultyPosts);
 router.get('/:postId', authenticate, getPost);
 
 router.post('/:postId/like', authenticate, interactionRateLimit, likePost);
+
+// Save/Unsave post (bookmarks)
+router.post('/:postId/save', authenticate, interactionRateLimit, (req, res, next) => savePost(req, res).catch(next));
+router.delete('/:postId/save', authenticate, interactionRateLimit, (req, res, next) => unsavePost(req, res).catch(next));
+
+// Share post
+router.post('/:postId/share', authenticate, interactionRateLimit, (req, res, next) => sharePost(req, res).catch(next));
 
 router.post('/:postId/comments', authenticate, commentRateLimit, moderateComment, [
     body('text').trim().notEmpty().isLength({ max: 500 }),

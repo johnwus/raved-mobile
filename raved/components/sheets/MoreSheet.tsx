@@ -5,6 +5,8 @@ import {
   TouchableOpacity,
   StyleSheet,
   ScrollView,
+  AppState,
+  AppStateStatus,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -12,7 +14,8 @@ import { BottomSheet } from '../ui/BottomSheet';
 import { theme } from '../../theme';
 import { useStore } from '../../hooks/useStore';
 import { useAuth } from '../../hooks/useAuth';
-import { useRouter } from 'expo-router';
+import { usePathname, useRouter } from 'expo-router';
+import { getCartCount, getPendingConnectionRequestsCount, getUnreadMessagesCount } from '../../services/api';
 
 interface MoreSheetProps {
   visible: boolean;
@@ -21,8 +24,28 @@ interface MoreSheetProps {
 
 export const MoreSheet: React.FC<MoreSheetProps> = ({ visible, onClose }) => {
   const router = useRouter();
-  const { isPremium, cartItems } = useStore();
+  const pathname = usePathname();
+  const { isPremium } = useStore();
   const { logout } = useAuth();
+
+  const [cartCount, setCartCount] = React.useState<number>(0);
+  const [connectionsCount, setConnectionsCount] = React.useState<number>(0);
+  const [messagesCount, setMessagesCount] = React.useState<number>(0);
+
+  const refreshCounts = React.useCallback(async () => {
+    try {
+      const [c, conn, msg] = await Promise.all([
+        getCartCount().catch(() => 0),
+        getPendingConnectionRequestsCount().catch(() => 0),
+        getUnreadMessagesCount().catch(() => 0),
+      ]);
+      setCartCount(c);
+      setConnectionsCount(conn);
+      setMessagesCount(msg);
+    } catch {
+      // keep current counts
+    }
+  }, []);
 
   const handleNavigate = (path: string) => {
     onClose();
@@ -37,8 +60,25 @@ export const MoreSheet: React.FC<MoreSheetProps> = ({ visible, onClose }) => {
     router.replace('/(auth)/login');
   };
 
+  // Refresh counts when sheet opens, when route changes, and on app foreground
+  React.useEffect(() => {
+    if (visible) refreshCounts();
+  }, [visible, refreshCounts]);
+
+  React.useEffect(() => {
+    if (visible) refreshCounts();
+  }, [pathname, visible, refreshCounts]);
+
+  React.useEffect(() => {
+    const handler = (state: AppStateStatus) => {
+      if (state === 'active' && visible) refreshCounts();
+    };
+    const sub = AppState.addEventListener('change', handler);
+    return () => sub.remove();
+  }, [visible, refreshCounts]);
+
   return (
-    <BottomSheet visible={visible} onClose={onClose} height="60%">
+    <BottomSheet visible={visible} onClose={onClose} height="100%" fullScreen allowOverlayDismiss={false}>
       <View style={styles.container}>
         {/* Header */}
         <View style={styles.header}>
@@ -61,7 +101,14 @@ export const MoreSheet: React.FC<MoreSheetProps> = ({ visible, onClose }) => {
                 style={[styles.actionCard, styles.actionCardBlue]}
                 onPress={() => handleNavigate('/chat')}
               >
-                <Ionicons name="chatbubbles" size={32} color="#2563EB" />
+                <View style={styles.badgeContainer}>
+                  <Ionicons name="chatbubbles" size={32} color="#2563EB" />
+                  {messagesCount > 0 && (
+                    <View style={styles.badge}>
+                      <Text style={styles.badgeText}>{messagesCount > 99 ? '99+' : messagesCount}</Text>
+                    </View>
+                  )}
+                </View>
                 <Text style={[styles.actionCardText, styles.actionCardTextBlue]}>
                   Messages
                 </Text>
@@ -73,9 +120,9 @@ export const MoreSheet: React.FC<MoreSheetProps> = ({ visible, onClose }) => {
               >
                 <View style={styles.badgeContainer}>
                   <Ionicons name="cart" size={32} color="#9333EA" />
-                  {cartItems.length > 0 && (
+                  {cartCount > 0 && (
                     <View style={styles.badge}>
-                      <Text style={styles.badgeText}>{cartItems.length}</Text>
+                      <Text style={styles.badgeText}>{cartCount > 99 ? '99+' : cartCount}</Text>
                     </View>
                   )}
                 </View>
@@ -98,7 +145,14 @@ export const MoreSheet: React.FC<MoreSheetProps> = ({ visible, onClose }) => {
                 style={[styles.actionCard, styles.actionCardGreen]}
                 onPress={() => handleNavigate('/connections')}
               >
-                <Ionicons name="people" size={32} color="#16A34A" />
+                <View style={styles.badgeContainer}>
+                  <Ionicons name="people" size={32} color="#16A34A" />
+                  {connectionsCount > 0 && (
+                    <View style={styles.badge}>
+                      <Text style={styles.badgeText}>{connectionsCount > 99 ? '99+' : connectionsCount}</Text>
+                    </View>
+                  )}
+                </View>
                 <Text style={[styles.actionCardText, styles.actionCardTextGreen]}>
                   Connections
                 </Text>
@@ -258,10 +312,30 @@ const styles = StyleSheet.create({
   },
   actionCardRed: {
     backgroundColor: '#FEF2F2',
+  },
+  badgeContainer: {
+    position: 'relative',
+    justifyContent: 'center',
+    alignItems: 'center',
     width: '100%',
-    aspectRatio: undefined,
-    flexDirection: 'row',
-    gap: theme.spacing[3],
+  },
+  badge: {
+    position: 'absolute',
+    top: -4,
+    right: -4,
+    backgroundColor: '#EF4444',
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 2,
+    borderColor: '#FFFFFF',
+  },
+  badgeText: {
+    color: 'white',
+    fontSize: 10,
+    fontWeight: '600',
   },
   actionCardText: {
     fontSize: theme.typography.fontSize[14],
@@ -285,26 +359,6 @@ const styles = StyleSheet.create({
   },
   actionCardTextRed: {
     color: '#991B1B',
-  },
-  badgeContainer: {
-    position: 'relative',
-  },
-  badge: {
-    position: 'absolute',
-    top: -8,
-    right: -8,
-    backgroundColor: '#EF4444',
-    borderRadius: theme.borderRadius.full,
-    minWidth: 20,
-    height: 20,
-    justifyContent: 'center',
-    alignItems: 'center',
-    paddingHorizontal: 4,
-  },
-  badgeText: {
-    color: 'white',
-    fontSize: theme.typography.fontSize[10],
-    fontWeight: theme.typography.fontWeight.bold,
   },
   premiumGrid: {
     flexDirection: 'row',

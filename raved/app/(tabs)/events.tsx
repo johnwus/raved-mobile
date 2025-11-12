@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import {
   View,
   Text,
@@ -7,7 +7,6 @@ import {
   Image,
   StyleSheet,
   FlatList,
-  ActivityIndicator,
   RefreshControl,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -17,6 +16,8 @@ import { theme } from '../../theme';
 import { Button } from '../../components/ui/Button';
 import { Avatar } from '../../components/ui/Avatar';
 import { eventsApi, Event } from '../../services/eventsApi';
+import { MoreSheet } from '../../components/sheets/MoreSheet';
+import { SkeletonLoader } from '../../components/ui/SkeletonLoader';
 
 const eventTypeFilters = [
   { id: 'all', label: 'All' },
@@ -35,7 +36,7 @@ const audienceFilters = [
   { id: 'public', label: 'Public' },
 ];
 
-const formatDate = (dateString: string) => {
+const _formatDate = (dateString: string) => {
   const date = new Date(dateString);
   const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
   return `${months[date.getMonth()]} ${date.getDate()}`;
@@ -44,16 +45,13 @@ const formatDate = (dateString: string) => {
 export default function EventsScreen() {
   const router = useRouter();
   const [eventTypeFilter, setEventTypeFilter] = useState('all');
+  const [moreSheetVisible, setMoreSheetVisible] = useState(false);
   const [audienceFilter, setAudienceFilter] = useState('all');
   const [events, setEvents] = useState<Event[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
-  useEffect(() => {
-    loadEvents();
-  }, [eventTypeFilter, audienceFilter]);
-
-  const loadEvents = async () => {
+  const loadEvents = React.useCallback(async () => {
     try {
       setLoading(true);
       const filters: any = {};
@@ -77,7 +75,7 @@ export default function EventsScreen() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [eventTypeFilter, audienceFilter]);
 
   const onRefresh = async () => {
     setRefreshing(true);
@@ -85,21 +83,27 @@ export default function EventsScreen() {
     setRefreshing(false);
   };
 
+  React.useEffect(() => {
+    loadEvents();
+  }, [loadEvents]);
+
   const handleJoinEvent = async (eventId: string) => {
+    // Optimistic toggle
+    setEvents(prev => prev.map(e => e.id === eventId ? { ...e, attending: !e.attending, attendees: e.attending ? Math.max(0, (e.attendees||0)-1) : (e.attendees||0)+1 } : e));
     try {
       await eventsApi.toggleAttendance(eventId);
-      // Reload events to get updated attendance status
-      await loadEvents();
     } catch (error) {
       console.error('Failed to toggle attendance:', error);
+      // Revert on failure
+      setEvents(prev => prev.map(e => e.id === eventId ? { ...e, attending: !e.attending, attendees: e.attending ? Math.max(0, (e.attendees||0)-1) : (e.attendees||0)+1 } : e));
     }
   };
 
   const renderEventCard = ({ item }: { item: Event }) => {
     const isFull = item.maxAttendees ? item.attendees >= item.maxAttendees : false;
     const dateParts = item.date.split('-');
-    const month = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][parseInt(dateParts[1]) - 1];
-    const day = parseInt(dateParts[2]);
+    const _month = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][parseInt(dateParts[1]) - 1];
+    const _day = parseInt(dateParts[2]);
 
     return (
       <TouchableOpacity
@@ -119,16 +123,20 @@ export default function EventsScreen() {
           
           {/* Date Badge */}
           <View style={styles.dateBadge}>
-            <Text style={styles.dateMonth}>{month}</Text>
-            <Text style={styles.dateDay}>{day}</Text>
+            <Text style={styles.dateMonth}>{_month}</Text>
+            <Text style={styles.dateDay}>{_day}</Text>
           </View>
 
           {/* Category Badge */}
           <View style={styles.categoryBadge}>
             <Text style={styles.categoryText}>
-              {item.category === 'fashion' ? 'Fashion' : 
-               item.category === 'workshop' ? 'Workshop' : 
-               item.category === 'networking' ? 'Networking' : 'Event'}
+              {(() => {
+                const cat = (item as any).category;
+                if (cat === 'fashion') return 'Fashion';
+                if (cat === 'workshop') return 'Workshop';
+                if (cat === 'networking') return 'Networking';
+                return 'Event';
+              })()}
             </Text>
           </View>
 
@@ -210,6 +218,31 @@ export default function EventsScreen() {
 
   return (
     <SafeAreaView style={styles.container}>
+      {/* Header */}
+      <View style={styles.topHeader}>
+        <TouchableOpacity 
+          style={styles.headerButton}
+          onPress={() => setMoreSheetVisible(true)}
+        >
+          <Ionicons name="menu" size={24} color="#111827" />
+        </TouchableOpacity>
+        <Text style={styles.headerTitle}>Events</Text>
+        <View style={styles.headerActions}>
+          <TouchableOpacity 
+            style={styles.headerButton}
+            onPress={() => router.push('/search' as any)}
+          >
+            <Ionicons name="search" size={24} color="#111827" />
+          </TouchableOpacity>
+          <TouchableOpacity 
+            style={styles.headerButton}
+            onPress={() => router.push('/notifications' as any)}
+          >
+            <Ionicons name="notifications-outline" size={24} color="#111827" />
+          </TouchableOpacity>
+        </View>
+      </View>
+
       {/* Create Event Button */}
       <View style={styles.header}>
         <Button
@@ -286,8 +319,20 @@ export default function EventsScreen() {
         {/* Events List */}
         <View style={styles.eventsList}>
           {loading && events.length === 0 ? (
-            <View style={styles.loadingContainer}>
-              <ActivityIndicator size="large" color={theme.colors.primary} />
+            <View style={{ gap: theme.spacing[4] }}>
+              {[0,1,2].map(i => (
+                <View key={i} style={styles.eventCard}>
+                  <SkeletonLoader height={160} />
+                  <View style={{ padding: theme.spacing[3], gap: 8 }}>
+                    <SkeletonLoader height={16} style={{ width: '70%' }} />
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                      <SkeletonLoader height={20} width={20} borderRadius={10} />
+                      <SkeletonLoader height={12} style={{ width: '40%' }} />
+                    </View>
+                    <SkeletonLoader height={12} style={{ width: '80%' }} />
+                  </View>
+                </View>
+              ))}
             </View>
           ) : events.length > 0 ? (
             <FlatList
@@ -305,6 +350,8 @@ export default function EventsScreen() {
           )}
         </View>
       </ScrollView>
+      {/* More Sheet */}
+      <MoreSheet visible={moreSheetVisible} onClose={() => setMoreSheetVisible(false)} />
     </SafeAreaView>
   );
 }
@@ -313,6 +360,28 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#f8fafc',
+  },
+  topHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: theme.spacing[4],
+    paddingVertical: theme.spacing[3],
+    borderBottomWidth: 1,
+    borderBottomColor: '#E5E7EB',
+    backgroundColor: '#FFFFFF',
+  },
+  headerButton: {
+    padding: theme.spacing[2],
+  },
+  headerTitle: {
+    fontSize: theme.typography.fontSize[18],
+    fontWeight: theme.typography.fontWeight.bold,
+    color: '#111827',
+  },
+  headerActions: {
+    flexDirection: 'row',
+    gap: theme.spacing[2],
   },
   header: {
     padding: theme.spacing[4],

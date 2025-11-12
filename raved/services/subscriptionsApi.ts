@@ -15,12 +15,12 @@ export interface SubscriptionStatus {
   isTrial: boolean;
   trialDaysLeft: number | null;
   subscription: {
-    id: string;
+    id?: string;
     planType: string;
     amount: number;
     status: string;
-    startsAt: string;
-    expiresAt: string;
+    startsAt: string | Date;
+    expiresAt: string | Date;
   } | null;
 }
 
@@ -34,6 +34,12 @@ export const subscriptionsApi = {
   // Get user subscription status
   getSubscriptionStatus: async (): Promise<SubscriptionStatus> => {
     const response = await api.get('/subscriptions/status');
+    return response.data;
+  },
+
+  // Upgrade to premium (dev/mock) with optimistic UI support on FE
+  upgrade: async (plan: 'weekly' | 'monthly' = 'weekly'): Promise<SubscriptionStatus> => {
+    const response = await api.post('/subscriptions/upgrade', { plan });
     return response.data;
   }
 };

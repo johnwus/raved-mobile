@@ -24,16 +24,16 @@ import { Avatar } from '../../components/ui/Avatar';
 import { MoreSheet } from '../../components/sheets/MoreSheet';
 import { FloatingActionButtons } from '../../components/ui/FloatingActionButtons';
 import { userApi } from '../../services/userApi';
+import { SkeletonLoader } from '../../components/ui/SkeletonLoader';
 
 export default function HomeScreen() {
   const router = useRouter();
-  const { isDark, currentColors, toggleDarkMode } = useTheme();
-  const { user } = useAuth();
-  const { posts, featuredPost, stories, refreshFeed } = usePosts();
+  const { isDark, currentColors } = useTheme();
+  const { user: _user } = useAuth();
+  const { posts, featuredPost, stories, refreshFeed, fetchMore, hasMore } = usePosts();
   const { isPremium, storeItems } = useStore();
   const [refreshing, setRefreshing] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
-  const [displayedPosts, setDisplayedPosts] = useState(posts.slice(0, 5));
   const [moreSheetVisible, setMoreSheetVisible] = useState(false);
   const [rankings, setRankings] = useState([]);
   const [loadingRankings, setLoadingRankings] = useState(false);
@@ -42,19 +42,12 @@ export default function HomeScreen() {
   const [showSuggestions, setShowSuggestions] = useState(true);
   const [showTrending, setShowTrending] = useState(false);
 
+  // when posts update, stop loadingMore spinner
   useEffect(() => {
-    setDisplayedPosts(posts.slice(0, 5));
-  }, [posts.length]);
+    setLoadingMore(false);
+  }, [posts]);
 
-  useEffect(() => {
-    if (isPremium) {
-      fetchRankings();
-    }
-    fetchSuggestions();
-    fetchTrending();
-  }, [isPremium]);
-
-  const fetchSuggestions = async () => {
+  const fetchSuggestions = React.useCallback(async () => {
     try {
       const postsApi = (await import('../../services/postsApi')).default;
       const response = await postsApi.getPostSuggestions(5);
@@ -62,9 +55,9 @@ export default function HomeScreen() {
     } catch (error) {
       console.error('Failed to fetch suggestions:', error);
     }
-  };
+  }, []);
 
-  const fetchTrending = async () => {
+  const fetchTrending = React.useCallback(async () => {
     try {
       const postsApi = (await import('../../services/postsApi')).default;
       const response = await postsApi.getTrendingPosts(1, 5, '24h');
@@ -72,9 +65,9 @@ export default function HomeScreen() {
     } catch (error) {
       console.error('Failed to fetch trending:', error);
     }
-  };
+  }, []);
 
-  const fetchRankings = async () => {
+  const fetchRankings = React.useCallback(async () => {
     try {
       setLoadingRankings(true);
       const response = await userApi.getRankings('weekly');
@@ -84,25 +77,27 @@ export default function HomeScreen() {
     } finally {
       setLoadingRankings(false);
     }
-  };
+  }, []);
+
+  useEffect(() => {
+    if (isPremium) {
+      fetchRankings();
+    }
+    fetchSuggestions();
+    fetchTrending();
+  }, [isPremium, fetchRankings, fetchSuggestions, fetchTrending]);
 
   const onRefresh = async () => {
     setRefreshing(true);
     await refreshFeed();
-    setDisplayedPosts(posts.slice(0, 5));
     setRefreshing(false);
   };
 
   const loadMore = useCallback(async () => {
-    if (loadingMore || displayedPosts.length >= posts.length) return;
-    
+    if (loadingMore || !hasMore) return;
     setLoadingMore(true);
-    // Simulate loading delay
-    await new Promise(resolve => setTimeout(resolve, 1000));
-    const nextBatch = posts.slice(displayedPosts.length, displayedPosts.length + 5);
-    setDisplayedPosts(prev => [...prev, ...nextBatch]);
-    setLoadingMore(false);
-  }, [loadingMore, displayedPosts.length, posts]);
+    await fetchMore();
+  }, [loadingMore, hasMore, fetchMore]);
 
   const getRankColor = (rank: number) => {
     switch (rank) {
@@ -149,12 +144,6 @@ export default function HomeScreen() {
           >
             <Ionicons name="notifications-outline" size={24} color={colors.text} />
           </TouchableOpacity>
-          <TouchableOpacity 
-            style={styles.headerButton} 
-            onPress={toggleDarkMode}
-          >
-            <Ionicons name={isDark ? "sunny" : "moon"} size={24} color={colors.text} />
-          </TouchableOpacity>
         </View>
       </View>
 
@@ -167,7 +156,7 @@ export default function HomeScreen() {
           const { layoutMeasurement, contentOffset, contentSize } = nativeEvent;
           const paddingToBottom = 20;
           if (layoutMeasurement.height + contentOffset.y >= contentSize.height - paddingToBottom) {
-            if (!loadingMore && displayedPosts.length < posts.length) {
+            if (!loadingMore && hasMore) {
               loadMore();
             }
           }
@@ -196,23 +185,35 @@ export default function HomeScreen() {
           </View>
           
           <View style={styles.storeGrid}>
-            {storeItems.slice(0, 4).map((item) => (
-              <TouchableOpacity 
-                key={item.id}
-                style={[styles.storeItem, { backgroundColor: colors.card }]}
-                onPress={() => router.push(`/product/${item.id}` as any)}
-              >
-                <Image source={{ uri: item.images[0] }} style={styles.storeItemImage} />
-                <View style={styles.storeItemInfo}>
-                  <Text style={[styles.storeItemName, { color: colors.text }]} numberOfLines={2}>
-                    {item.name}
-                  </Text>
-                  <Text style={[styles.storeItemPrice, { color: currentColors.primary }]}>
-                    ₵{item.price}
-                  </Text>
+            {storeItems.length === 0 ? (
+              [0,1,2,3].map((i) => (
+                <View key={i} style={[styles.storeItem, { backgroundColor: colors.card }]}> 
+                  <SkeletonLoader height={120} />
+                  <View style={styles.storeItemInfo}>
+                    <SkeletonLoader height={14} style={{ width: '80%' }} />
+                    <SkeletonLoader height={16} style={{ width: '40%', marginTop: 6 }} />
+                  </View>
                 </View>
-              </TouchableOpacity>
-            ))}
+              ))
+            ) : (
+              storeItems.slice(0, 4).map((item) => (
+                <TouchableOpacity 
+                  key={item.id}
+                  style={[styles.storeItem, { backgroundColor: colors.card }]}
+                  onPress={() => router.push(`/product/${item.id}` as any)}
+                >
+                  <Image source={{ uri: item.images[0] }} style={styles.storeItemImage} />
+                  <View style={styles.storeItemInfo}>
+                    <Text style={[styles.storeItemName, { color: colors.text }]} numberOfLines={2}>
+                      {item.name}
+                    </Text>
+                    <Text style={[styles.storeItemPrice, { color: currentColors.primary }]}>
+                      ₵{item.price}
+                    </Text>
+                  </View>
+                </TouchableOpacity>
+              ))
+            )}
           </View>
           
           <TouchableOpacity 
@@ -230,7 +231,7 @@ export default function HomeScreen() {
               <View style={styles.rankingHeaderLeft}>
                 <Ionicons name="trophy" size={20} color="#F59E0B" />
                 <Text style={[styles.sectionTitle, { color: colors.text }]}>
-                  This Week's Top Creators
+                  This Week’s Top Creators
                 </Text>
               </View>
               <TouchableOpacity onPress={() => router.push('/rankings' as any)}>
@@ -414,25 +415,38 @@ export default function HomeScreen() {
             Your Feed
           </Text>
           <View style={styles.feed}>
-            {displayedPosts.map(post => (
-              <PostCard key={post.id} post={post} />
-            ))}
+            {posts.length === 0 ? (
+              [0,1,2].map((i) => (
+                <View key={i} style={{ backgroundColor: colors.card, borderRadius: 16, overflow: 'hidden' }}>
+                  <View style={{ padding: 12, flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+                    <SkeletonLoader height={36} width={36} borderRadius={18} />
+                    <View style={{ flex: 1 }}>
+                      <SkeletonLoader height={12} style={{ width: '50%' }} />
+                      <SkeletonLoader height={10} style={{ width: '30%', marginTop: 6 }} />
+                    </View>
+                  </View>
+                  <SkeletonLoader height={300} />
+                  <View style={{ padding: 12 }}>
+                    <SkeletonLoader height={12} style={{ width: '60%' }} />
+                  </View>
+                </View>
+              ))
+            ) : (
+              posts.map(post => (
+                <PostCard key={post.id} post={post} />
+              ))
+            )}
           </View>
           
-          {displayedPosts.length < posts.length && (
-            <TouchableOpacity 
-              style={[styles.loadMoreButton, { backgroundColor: colors.card }]}
-              onPress={loadMore}
-              disabled={loadingMore}
-            >
-              {loadingMore ? (
-                <ActivityIndicator color={currentColors.primary} />
-              ) : (
-                <Text style={[styles.loadMoreText, { color: currentColors.primary }]}>
-                  Load More
-                </Text>
-              )}
-            </TouchableOpacity>
+          {loadingMore && (
+            <View style={[styles.loadMoreButton, { backgroundColor: colors.card }]}> 
+              <View style={{ width: '100%' }}>
+                <View style={{ marginBottom: 8 }}>
+                  <SkeletonLoader height={16} style={{ width: '30%' }} />
+                </View>
+                <SkeletonLoader height={16} style={{ width: '20%' }} />
+              </View>
+            </View>
           )}
         </View>
       </ScrollView>

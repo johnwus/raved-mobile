@@ -3,7 +3,6 @@ import {
   View,
   Text,
   StyleSheet,
-  TouchableOpacity,
 } from 'react-native';
 import { BottomSheet } from '../ui/BottomSheet';
 import { Button } from '../ui/Button';
@@ -35,7 +34,7 @@ export const PasswordResetSheet: React.FC<PasswordResetSheetProps> = ({
       <View style={styles.content}>
         <Text style={styles.title}>Reset Password</Text>
         <Text style={styles.subtitle}>
-          Enter your student email and we'll send a reset link.
+          Enter your student email and we’ll send a reset link.
         </Text>
         
         <Input

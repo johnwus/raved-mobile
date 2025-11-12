@@ -1,4 +1,4 @@
-import { Router } from 'express';
+import { Router, Request, Response } from 'express';
 import { body } from 'express-validator';
 import {
   login,
@@ -13,14 +13,43 @@ import {
   enableSMSTwoFactor,
   disableSMSTwoFactor,
   sendSMSTwoFactorCode,
-    verifySMSTwoFactorCode,
-    refresh,
-    updateUserLanguagePreferences,
+  verifySMSTwoFactorCode,
+  refresh,
+  updateUserLanguagePreferences,
+  registerUser,
 } from '../controllers/auth.controller';
 import { authenticate } from '../middleware/auth.middleware';
 import { authRateLimit, criticalRateLimit } from '../middleware/rate-limit.middleware';
 
 const router = Router();
+
+// Registration helpers (pre-auth)
+router.get('/check-username', [
+    // username in query
+], (req: Request, res: Response) => (require('../controllers/auth.controller') as any).checkUsernameAvailability(req, res));
+router.post('/register/send-email-code', [
+    body('email').isEmail().normalizeEmail(),
+], (req: Request, res: Response) => (require('../controllers/auth.controller') as any).sendRegistrationEmailCode(req, res));
+router.post('/register/verify-email-code', [
+    body('email').isEmail().normalizeEmail(),
+    body('code').isLength({ min: 6, max: 6 }),
+], (req: Request, res: Response) => (require('../controllers/auth.controller') as any).verifyRegistrationEmailCode(req, res));
+router.post('/register/send-sms-code', [
+    body('phone').notEmpty(),
+], (req: Request, res: Response) => (require('../controllers/auth.controller') as any).sendRegistrationSMSCode(req, res));
+router.post('/register/verify-sms-code', [
+    body('phone').notEmpty(),
+    body('code').isLength({ min: 6, max: 6 }),
+], (req: Request, res: Response) => (require('../controllers/auth.controller') as any).verifyRegistrationSMSCode(req, res));
+
+// Register
+router.post('/register', [
+    body('email').isEmail().normalizeEmail(),
+    body('password').isLength({ min: 8 }),
+    body('firstName').notEmpty(),
+    body('lastName').notEmpty(),
+    body('username').isLength({ min: 3 }),
+], registerUser);
 
 // Login
 router.post('/login', [

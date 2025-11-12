@@ -6,15 +6,13 @@ import {
   TouchableOpacity,
   Image,
   StyleSheet,
-  TextInput,
-  Switch,
   Alert,
+  Switch,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { theme } from '../../theme';
-import { Button } from '../../components/ui/Button';
 import * as ImagePicker from 'expo-image-picker';
 
 export default function CreateStoryScreen() {
@@ -64,12 +62,12 @@ export default function CreateStoryScreen() {
           uri: result.assets[0].uri,
         });
       }
-    } catch (error) {
+    } catch {
       Alert.alert('Error', 'Failed to capture media');
     }
   };
 
-  const useTemplate = (template: string) => {
+  const selectTemplate = (template: string) => {
     const templates: Record<string, { background: string[]; text: string }> = {
       ootd: { background: ['#EC4899', '#8B5CF6'], text: "Today's Fit 👗" },
       mood: { background: ['#3B82F6', '#06B6D4'], text: "Current Mood ✨" },
@@ -204,7 +202,7 @@ export default function CreateStoryScreen() {
             <View style={styles.templates}>
               <TouchableOpacity 
                 style={[styles.template, { backgroundColor: '#EC4899' }]}
-                onPress={() => useTemplate('ootd')}
+                onPress={() => selectTemplate('ootd')}
               >
                 <Ionicons name="shirt" size={24} color="white" />
                 <Text style={styles.templateText}>OOTD</Text>
@@ -212,7 +210,7 @@ export default function CreateStoryScreen() {
               
               <TouchableOpacity 
                 style={[styles.template, { backgroundColor: '#3B82F6' }]}
-                onPress={() => useTemplate('mood')}
+                onPress={() => selectTemplate('mood')}
               >
                 <Ionicons name="heart" size={24} color="white" />
                 <Text style={styles.templateText}>Mood</Text>
@@ -220,7 +218,7 @@ export default function CreateStoryScreen() {
               
               <TouchableOpacity 
                 style={[styles.template, { backgroundColor: '#10B981' }]}
-                onPress={() => useTemplate('study')}
+                onPress={() => selectTemplate('study')}
               >
                 <Ionicons name="book" size={24} color="white" />
                 <Text style={styles.templateText}>Study</Text>
@@ -228,7 +226,7 @@ export default function CreateStoryScreen() {
               
               <TouchableOpacity 
                 style={[styles.template, { backgroundColor: '#F59E0B' }]}
-                onPress={() => useTemplate('event')}
+                onPress={() => selectTemplate('event')}
               >
                 <Ionicons name="calendar" size={24} color="white" />
                 <Text style={styles.templateText}>Event</Text>
@@ -236,7 +234,7 @@ export default function CreateStoryScreen() {
 
               <TouchableOpacity 
                 style={[styles.template, { backgroundColor: '#EF4444' }]}
-                onPress={() => useTemplate('workout')}
+                onPress={() => selectTemplate('workout')}
               >
                 <Ionicons name="fitness" size={24} color="white" />
                 <Text style={styles.templateText}>Workout</Text>
@@ -244,7 +242,7 @@ export default function CreateStoryScreen() {
 
               <TouchableOpacity 
                 style={[styles.template, { backgroundColor: '#EAB308' }]}
-                onPress={() => useTemplate('food')}
+                onPress={() => selectTemplate('food')}
               >
                 <Ionicons name="restaurant" size={24} color="white" />
                 <Text style={styles.templateText}>Food</Text>
@@ -252,7 +250,7 @@ export default function CreateStoryScreen() {
 
               <TouchableOpacity 
                 style={[styles.template, { backgroundColor: '#06B6D4' }]}
-                onPress={() => useTemplate('travel')}
+                onPress={() => selectTemplate('travel')}
               >
                 <Ionicons name="airplane" size={24} color="white" />
                 <Text style={styles.templateText}>Travel</Text>
@@ -260,7 +258,7 @@ export default function CreateStoryScreen() {
 
               <TouchableOpacity 
                 style={[styles.template, { backgroundColor: '#A855F7' }]}
-                onPress={() => useTemplate('party')}
+                onPress={() => selectTemplate('party')}
               >
                 <Ionicons name="musical-notes" size={24} color="white" />
                 <Text style={styles.templateText}>Party</Text>
@@ -268,7 +266,7 @@ export default function CreateStoryScreen() {
 
               <TouchableOpacity 
                 style={[styles.template, { backgroundColor: '#14B8A6' }]}
-                onPress={() => useTemplate('chill')}
+                onPress={() => selectTemplate('chill')}
               >
                 <Ionicons name="leaf" size={24} color="white" />
                 <Text style={styles.templateText}>Chill</Text>
@@ -276,7 +274,7 @@ export default function CreateStoryScreen() {
 
               <TouchableOpacity 
                 style={[styles.template, { backgroundColor: '#6366F1' }]}
-                onPress={() => useTemplate('motivation')}
+                onPress={() => selectTemplate('motivation')}
               >
                 <Ionicons name="flame" size={24} color="white" />
                 <Text style={styles.templateText}>Motivation</Text>
@@ -384,7 +382,7 @@ const styles = StyleSheet.create({
   },
   storyText: {
     color: 'white',
-    fontSize: theme.typography.fontSize[32],
+    fontSize: 32,
     fontWeight: theme.typography.fontWeight.bold,
     textAlign: 'center',
     textShadowColor: 'rgba(0,0,0,0.5)',

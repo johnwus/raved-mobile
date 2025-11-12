@@ -19,8 +19,6 @@ import { Input } from '../components/ui/Input';
 import { Avatar } from '../components/ui/Avatar';
 import { useAuth } from '../hooks/useAuth';
 import { useStore } from '../hooks/useStore';
-import { StoreItem } from '../types';
-import { mockImages } from '../utils/mockData';
 
 const categories = ['clothing', 'shoes', 'accessories', 'bags', 'jewelry'];
 const sizes = ['XS', 'S', 'M', 'L', 'XL', 'XXL', 'One Size'];
@@ -36,7 +34,7 @@ const meetupLocations = [
 export default function AddItemScreen() {
   const router = useRouter();
   const { user } = useAuth();
-  const { isPremium } = useStore();
+  const { isPremium: _isPremium } = useStore();
   
   const [images, setImages] = useState<string[]>([]);
   const [name, setName] = useState('');
@@ -465,7 +463,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: theme.spacing[2],
     paddingHorizontal: theme.spacing[6],
-    paddingVertical: theme.spacing[2.5],
+    paddingVertical: theme.spacing[2],
   },
   uploadButtonText: {
     color: 'white',
@@ -528,13 +526,13 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   thirdWidthLeft: {
-    marginRight: theme.spacing[1.5],
+    marginRight: theme.spacing[1],
   },
   thirdWidthMiddle: {
-    marginHorizontal: theme.spacing[1.5],
+    marginHorizontal: theme.spacing[1],
   },
   thirdWidthRight: {
-    marginLeft: theme.spacing[1.5],
+    marginLeft: theme.spacing[1],
   },
   label: {
     fontSize: theme.typography.fontSize[14],

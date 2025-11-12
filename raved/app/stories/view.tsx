@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { StoryViewer } from '../../components/stories/StoryViewer';
 import { usePosts } from '../../hooks/usePosts';

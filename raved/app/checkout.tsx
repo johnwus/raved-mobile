@@ -6,7 +6,6 @@ import {
   TouchableOpacity,
   Image,
   StyleSheet,
-  TextInput,
   Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -28,12 +27,12 @@ export default function CheckoutScreen() {
   const [buyerPhone, setBuyerPhone] = useState('');
   const [address, setAddress] = useState('');
   const [momoPhone, setMomoPhone] = useState('');
-  const [momoNetwork, setMomoNetwork] = useState('mtn');
+  const [momoNetwork, _setMomoNetwork] = useState('mtn');
   const [isProcessing, setIsProcessing] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const cartItems = cart.map(cartItem => {
-    const product = products.find(p => p.id === cartItem.id);
+    const product = products.find(p => p.id === cartItem.productId);
     return { ...cartItem, product };
   }).filter(item => item.product);
 
@@ -53,7 +52,7 @@ export default function CheckoutScreen() {
 
     try {
       const checkoutData = {
-        items: cart.filter(item => item.id).map(item => ({ productId: item.id!, quantity: item.quantity })),
+        items: cart.filter(item => item.productId).map(item => ({ productId: item.productId!, quantity: item.quantity })),
         deliveryMethod,
         paymentMethod: paymentMethod as 'momo' | 'cash',
         buyerPhone,
@@ -131,7 +130,7 @@ export default function CheckoutScreen() {
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>📦 Order Summary</Text>
           {cartItems.map((item) => (
-            <View key={item.id} style={styles.checkoutItem}>
+            <View key={item.productId} style={styles.checkoutItem}>
               <Image 
                 source={{ uri: item.product!.images[0] }} 
                 style={styles.checkoutItemImage} 

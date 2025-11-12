@@ -15,7 +15,7 @@ import { theme } from '../theme';
 import { Button } from '../components/ui/Button';
 import { Avatar } from '../components/ui/Avatar';
 import { useStore } from '../hooks/useStore';
-import { rankingsApi, RankingsResponse, RankingUser } from '../services/rankingsApi';
+import { rankingsApi, RankingsResponse } from '../services/rankingsApi';
 
 type RankingPeriod = 'weekly' | 'monthly' | 'all-time';
 
@@ -33,11 +33,7 @@ export default function RankingsScreen() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
-  useEffect(() => {
-    loadRankings();
-  }, [activePeriod]);
-
-  const loadRankings = async () => {
+  const loadRankings = React.useCallback(async () => {
     try {
       setLoading(true);
       const data = await rankingsApi.getRankings(activePeriod);
@@ -47,13 +43,17 @@ export default function RankingsScreen() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [activePeriod]);
 
   const onRefresh = async () => {
     setRefreshing(true);
     await loadRankings();
     setRefreshing(false);
   };
+
+  useEffect(() => {
+    loadRankings();
+  }, [loadRankings]);
 
   const top3 = rankingsData?.rankings.slice(0, 3) || [];
   const rest = rankingsData?.rankings.slice(3) || [];

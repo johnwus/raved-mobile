@@ -2,8 +2,8 @@ import { useState, useEffect } from 'react';
 import { Post, Story } from '../types';
 import { Storage } from '../services/storage';
 import { usePostsStore } from '../store/postsStore';
-import socketService from '../services/socket';
-import postsApi from '../services/postsApi';
+import { socketService } from '../services/socket';
+import { postsApi } from '../services/postsApi';
 import storiesApi from '../services/storiesApi';
 
 export function usePosts() {
@@ -15,7 +15,9 @@ export function usePosts() {
     loading,
     error,
     fetchFeed,
-    setFeaturedPost
+    fetchMore,
+    setFeaturedPost,
+    hasMore,
   } = usePostsStore();
 
   const generateStories = async () => {
@@ -24,15 +26,14 @@ export function usePosts() {
       const response = await storiesApi.getStories();
       if (response.success && response.storyGroups) {
         // Transform storyGroups into flat Story array for compatibility
-        const flatStories: Story[] = [];
+        const flatStories: any[] = [];
         response.storyGroups.forEach((group: any) => {
           group.stories.forEach((story: any) => {
             flatStories.push({
               id: story._id || story.id,
               userId: story.userId,
-              username: group.user.username,
+              userName: group.user.username,
               avatar: group.user.avatarUrl || '',
-              media: story.content || [],
               timestamp: new Date(story.createdAt).getTime(),
               viewed: story.viewed || false,
               type: story.type,
@@ -40,7 +41,7 @@ export function usePosts() {
             });
           });
         });
-        setStories(flatStories);
+        setStories(flatStories as any);
       } else {
         setStories([]);
       }
@@ -54,7 +55,7 @@ export function usePosts() {
 
   const refreshFeed = async () => {
     try {
-      await fetchFeed();
+      await fetchFeed(1);
       await generateStories();
     } catch (error) {
       console.error('Failed to refresh feed:', error);
@@ -64,7 +65,7 @@ export function usePosts() {
 
   useEffect(() => {
     // Fetch real data from API
-    fetchFeed().catch((error) => {
+    fetchFeed(1).catch((error) => {
       console.error('Failed to fetch feed:', error);
     });
     generateStories();
@@ -89,6 +90,8 @@ export function usePosts() {
     loading,
     error,
     refreshFeed,
+    fetchMore,
+    hasMore,
   };
 }
 

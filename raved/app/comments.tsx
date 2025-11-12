@@ -15,8 +15,8 @@ import { Ionicons } from '@expo/vector-icons';
 import { theme } from '../theme';
 import { Avatar } from '../components/ui/Avatar';
 import { useAuth } from '../hooks/useAuth';
-import { Comment } from '../types';
-import postsApi from '../services/postsApi';
+import { postsApi } from '../services/postsApi';
+import { SkeletonLoader } from '../components/ui/SkeletonLoader';
 
 interface LocalComment {
   id: string;
@@ -79,13 +79,8 @@ export default function CommentsScreen() {
   const [loading, setLoading] = useState(false);
   const scrollViewRef = useRef<ScrollView>(null);
 
-  useEffect(() => {
-    if (postId) {
-      loadComments();
-    }
-  }, [postId]);
-
-  const loadComments = async () => {
+  const loadComments = React.useCallback(async () => {
+    if (!postId) return;
     if (!postId) return;
 
     try {
@@ -109,7 +104,13 @@ export default function CommentsScreen() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [postId]);
+
+  useEffect(() => {
+    if (postId) {
+      loadComments();
+    }
+  }, [postId, loadComments]);
 
   const handleSend = async () => {
     if (!commentText.trim() || !user || !postId) return;
@@ -184,8 +185,23 @@ export default function CommentsScreen() {
           style={styles.commentsContainer}
           contentContainerStyle={styles.commentsContent}
           showsVerticalScrollIndicator={false}
-        >
-          {comments.length === 0 ? (
+>
+          {loading ? (
+            <View style={{ gap: theme.spacing[3] }}>
+              {[0,1,2,3].map(i => (
+                <View key={i} style={styles.commentItem}>
+                  <SkeletonLoader height={32} width={32} borderRadius={16} />
+                  <View style={{ flex: 1 }}>
+                    <View style={[styles.commentBubble, { padding: theme.spacing[2] }]}>
+                      <SkeletonLoader height={12} style={{ width: '40%', marginBottom: 6 }} />
+                      <SkeletonLoader height={12} style={{ width: '80%', marginBottom: 6 }} />
+                      <SkeletonLoader height={10} style={{ width: '30%' }} />
+                    </View>
+                  </View>
+                </View>
+              ))}
+            </View>
+          ) : comments.length === 0 ? (
             <View style={styles.emptyState}>
               <Ionicons name="chatbubbles-outline" size={48} color="#9CA3AF" />
               <Text style={styles.emptyText}>No comments yet</Text>

@@ -10,13 +10,15 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
+import { LinearGradient } from 'expo-linear-gradient';
 import { theme } from '../theme';
 import { Avatar } from '../components/ui/Avatar';
 import { EmptyState } from '../components/ui/EmptyState';
 import * as Notifications from 'expo-notifications';
 import { NotificationService } from '../services/notificationService';
-import { notificationsApi, Notification as ApiNotification } from '../services/notificationsApi';
-import socketService from '../services/socket';
+import { notificationsApi } from '../services/notificationsApi';
+import { socketService } from '../services/socket';
+import { SkeletonLoader } from '../components/ui/SkeletonLoader';
 
 interface LocalNotification {
   id: string;
@@ -38,7 +40,7 @@ const mockNotifications: LocalNotification[] = [
   {
     id: 'n1',
     type: 'like',
-    user: { name: 'Sophie Parker', avatar: 'https://i.imgur.com/bxfE9TV.jpg' },
+    user: { id: 'u1', name: 'Sophie Parker', avatar: 'https://i.imgur.com/bxfE9TV.jpg' },
     text: 'liked your post',
     time: '2m ago',
     read: false,
@@ -47,7 +49,7 @@ const mockNotifications: LocalNotification[] = [
   {
     id: 'n2',
     type: 'comment',
-    user: { name: 'Emily White', avatar: 'https://i.imgur.com/nV6fsQh.jpg' },
+    user: { id: 'u2', name: 'Emily White', avatar: 'https://i.imgur.com/nV6fsQh.jpg' },
     text: 'commented on your post: "Love this outfit! 🔥"',
     time: '15m ago',
     read: false,
@@ -56,7 +58,7 @@ const mockNotifications: LocalNotification[] = [
   {
     id: 'n3',
     type: 'follow',
-    user: { name: 'Marcus Stevens', avatar: 'https://i.imgur.com/IigY4Hm.jpg' },
+    user: { id: 'u3', name: 'Marcus Stevens', avatar: 'https://i.imgur.com/IigY4Hm.jpg' },
     text: 'started following you',
     time: '1h ago',
     read: true,
@@ -64,7 +66,7 @@ const mockNotifications: LocalNotification[] = [
   {
     id: 'n4',
     type: 'sale',
-    user: { name: 'Anna Reynolds', avatar: 'https://i.imgur.com/KnZQY6W.jpg' },
+    user: { id: 'u4', name: 'Anna Reynolds', avatar: 'https://i.imgur.com/KnZQY6W.jpg' },
     text: 'purchased your item "Vintage Denim Jacket"',
     time: '2h ago',
     read: true,
@@ -72,7 +74,7 @@ const mockNotifications: LocalNotification[] = [
   {
     id: 'n5',
     type: 'mention',
-    user: { name: 'David Chen', avatar: 'https://i.imgur.com/kMB0Upu.jpg' },
+    user: { id: 'u5', name: 'David Chen', avatar: 'https://i.imgur.com/kMB0Upu.jpg' },
     text: 'mentioned you in a post',
     time: '3h ago',
     read: true,
@@ -118,9 +120,51 @@ export default function NotificationsScreen() {
   const router = useRouter();
   const [notifications, setNotifications] = useState<LocalNotification[]>([]);
   const [loading, setLoading] = useState(true);
-  const [unreadCount, setUnreadCount] = useState(0);
+  const [_unreadCount, _setUnreadCount] = useState(0);
   const [presentedNotifications, setPresentedNotifications] = useState<Notifications.Notification[]>([]);
   const [scheduledNotifications, setScheduledNotifications] = useState<Notifications.NotificationRequest[]>([]);
+
+  const loadNotifications = React.useCallback(async () => {
+    try {
+      setLoading(true);
+      const response = await notificationsApi.getNotifications(1, 50);
+      
+      const formattedNotifications: LocalNotification[] = response.notifications.map(notif => ({
+        id: notif.id,
+        type: notif.type,
+        user: notif.user,
+        text: notif.message,
+        time: formatTimeAgo(notif.createdAt),
+        read: notif.isRead,
+        postId: notif.postId,
+        itemId: notif.itemId,
+        eventId: notif.eventId,
+      }));
+      
+      setNotifications(formattedNotifications);
+      _setUnreadCount(response.unreadCount);
+    } catch (error) {
+      console.error('Error loading notifications:', error);
+      // Fallback to mock notifications
+      setNotifications(mockNotifications);
+      _setUnreadCount(mockNotifications.filter(n => !n.read).length);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  const loadExpoNotifications = React.useCallback(async () => {
+    try {
+      const [presented, scheduled] = await Promise.all([
+        NotificationService.getPresentedNotifications(),
+        NotificationService.getScheduledNotifications(),
+      ]);
+      setPresentedNotifications(presented);
+      setScheduledNotifications(scheduled);
+    } catch (error) {
+      console.error('Error loading expo notifications:', error);
+    }
+  }, []);
 
   useEffect(() => {
     loadNotifications();
@@ -143,7 +187,7 @@ export default function NotificationsScreen() {
         };
         
         setNotifications(prev => [newNotification, ...prev]);
-        setUnreadCount(prev => prev + 1);
+        _setUnreadCount(prev => prev + 1);
       });
     }).catch((error) => {
       console.error('Failed to connect to socket for notifications:', error);
@@ -153,49 +197,8 @@ export default function NotificationsScreen() {
     return () => {
       // Socket cleanup is handled by the service
     };
-  }, []);
+  }, [loadNotifications, loadExpoNotifications]);
 
-  const loadNotifications = async () => {
-    try {
-      setLoading(true);
-      const response = await notificationsApi.getNotifications(1, 50);
-      
-      const formattedNotifications: LocalNotification[] = response.notifications.map(notif => ({
-        id: notif.id,
-        type: notif.type,
-        user: notif.user,
-        text: notif.message,
-        time: formatTimeAgo(notif.createdAt),
-        read: notif.isRead,
-        postId: notif.postId,
-        itemId: notif.itemId,
-        eventId: notif.eventId,
-      }));
-      
-      setNotifications(formattedNotifications);
-      setUnreadCount(response.unreadCount);
-    } catch (error) {
-      console.error('Error loading notifications:', error);
-      // Fallback to mock notifications
-      setNotifications(mockNotifications);
-      setUnreadCount(mockNotifications.filter(n => !n.read).length);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const loadExpoNotifications = async () => {
-    try {
-      const [presented, scheduled] = await Promise.all([
-        NotificationService.getPresentedNotifications(),
-        NotificationService.getScheduledNotifications(),
-      ]);
-      setPresentedNotifications(presented);
-      setScheduledNotifications(scheduled);
-    } catch (error) {
-      console.error('Error loading expo notifications:', error);
-    }
-  };
 
   const formatTimeAgo = (dateString: string): string => {
     const date = new Date(dateString);
@@ -218,7 +221,7 @@ export default function NotificationsScreen() {
       setNotifications(prev =>
         prev.map(n => (n.id === notificationId ? { ...n, read: true } : n))
       );
-      setUnreadCount(prev => Math.max(0, prev - 1));
+      _setUnreadCount(prev => Math.max(0, prev - 1));
     } catch (error) {
       console.error('Error marking notification as read:', error);
     }
@@ -228,7 +231,7 @@ export default function NotificationsScreen() {
     try {
       await notificationsApi.markAllAsRead();
       setNotifications(prev => prev.map(n => ({ ...n, read: true })));
-      setUnreadCount(0);
+      _setUnreadCount(0);
     } catch (error) {
       console.error('Error marking all as read:', error);
     }
@@ -331,8 +334,19 @@ export default function NotificationsScreen() {
       {/* Notifications List */}
       <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false}>
         {loading ? (
-          <View style={styles.loadingContainer}>
-            <Text style={styles.loadingText}>Loading notifications...</Text>
+          <View style={styles.listContent}>
+            {[0,1,2,3,4].map(i => (
+              <View key={i} style={styles.notificationCard}>
+                <SkeletonLoader height={40} width={40} borderRadius={20} />
+                <View style={{ flex: 1, gap: 6 }}>
+                  <SkeletonLoader height={12} style={{ width: '50%' }} />
+                  <SkeletonLoader height={12} style={{ width: '80%' }} />
+                </View>
+                <View style={{ alignItems: 'flex-end' }}>
+                  <SkeletonLoader height={10} style={{ width: 40 }} />
+                </View>
+              </View>
+            ))}
           </View>
         ) : notifications.length > 0 ? (
           <FlatList
@@ -358,9 +372,9 @@ export default function NotificationsScreen() {
                     }
                   }}
                 >
-                  <View style={[styles.iconCircle, { backgroundColor: `${colors[0]}20` }]}>
-                    <Ionicons name={icon as any} size={20} color={colors[0]} />
-                  </View>
+                  <LinearGradient colors={colors as any} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.iconCircle}>
+                    <Ionicons name={icon as any} size={18} color={'#FFFFFF'} />
+                  </LinearGradient>
                   <View style={styles.notificationContent}>
                     {item.user && (
                       <View style={styles.notificationHeader}>

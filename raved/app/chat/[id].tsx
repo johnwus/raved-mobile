@@ -16,7 +16,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { theme } from '../../theme';
 import { Avatar } from '../../components/ui/Avatar';
 import { ErrorState } from '../../components/ui/ErrorState';
-import socketService from '../../services/socket';
+import { socketService } from '../../services/socket';
 import { useAuth } from '../../hooks/useAuth';
 
 interface Message {
@@ -62,11 +62,11 @@ export default function ChatDetailScreen() {
         const chatApi = (await import('../../services/chatApi')).default;
         const chatResponse = await chatApi.getChat(id);
         if (chatResponse.success && chatResponse.chat) {
-          const otherParticipant = chatResponse.chat.participants?.find((p: any) => p.id !== user?.id) || 
-                                   chatResponse.chat.otherParticipant;
+          const otherParticipant = (chatResponse.chat as any).participants?.find((p: any) => p.id !== user?.id);
           if (otherParticipant) {
             setChatParticipant({
               id: otherParticipant.id,
+              username: otherParticipant.username || otherParticipant.name || '',
               name: otherParticipant.name || `${otherParticipant.firstName || ''} ${otherParticipant.lastName || ''}`.trim(),
               avatarUrl: otherParticipant.avatarUrl || otherParticipant.avatar || '',
             });
@@ -76,7 +76,15 @@ export default function ChatDetailScreen() {
         // Fetch messages
         const messagesResponse = await chatApi.getMessages(id, 1, 50);
         if (messagesResponse.success && messagesResponse.messages) {
-          setMessages(messagesResponse.messages);
+          setMessages(messagesResponse.messages.map((m: any) => ({
+            ...m,
+            sender: {
+              id: m.sender?.id || '',
+              username: m.sender?.username || m.sender?.name || '',
+              name: m.sender?.name || '',
+              avatarUrl: m.sender?.avatarUrl || m.sender?.avatar || '',
+            },
+          })));
         }
 
         // Connect to socket and join chat room
@@ -89,7 +97,12 @@ export default function ChatDetailScreen() {
             setMessages(prev => [...prev, {
               id: data.id,
               conversationId: data.conversationId,
-              sender: data.sender,
+              sender: {
+                id: data.sender?.id || '',
+                username: data.sender?.username || data.sender?.name || '',
+                name: data.sender?.name || '',
+                avatarUrl: data.sender?.avatarUrl || data.sender?.avatar || '',
+              },
               content: data.content,
               type: data.type,
               isRead: data.isRead,
@@ -138,8 +151,9 @@ export default function ChatDetailScreen() {
         conversationId: id,
         sender: {
           id: user?.id || '',
+          username: user?.username || (user?.name || 'you').toLowerCase().replace(/\s+/g, ''),
           name: user?.name || 'You',
-          avatar: user?.avatar || '',
+          avatarUrl: user?.avatar || '',
         },
         content: messageText,
         type: 'text',
@@ -152,10 +166,24 @@ export default function ChatDetailScreen() {
       // Send message using chatApi
       const response = await chatApi.sendMessage(id, messageText, 'text');
       if (response.success && response.message) {
-        // Replace temp message with real one
+        // Replace temp message with real one (map to local Message shape)
         setMessages(prev => prev.map(m => 
           m.id.startsWith('temp_') && m.content === messageText 
-            ? response.message 
+            ? ({
+                id: response.message.id,
+                conversationId: response.message.conversationId,
+                sender: {
+                  id: response.message.sender?.id || '',
+                  username: (response.message.sender?.name || '').toLowerCase().replace(/\s+/g, ''),
+                  name: response.message.sender?.name || '',
+                  avatarUrl: response.message.sender?.avatar || '',
+                },
+                content: response.message.content,
+                type: response.message.type,
+                isRead: response.message.isRead,
+                createdAt: response.message.createdAt,
+                timeAgo: response.message.timeAgo,
+              }) as Message
             : m
         ));
       } else {
@@ -188,9 +216,9 @@ export default function ChatDetailScreen() {
   if (!chatParticipant) {
     return (
       <SafeAreaView style={styles.container} edges={['top']}>
-        <ErrorState
+          <ErrorState
           title="Chat not found"
-          message="The conversation you're looking for doesn't exist or has been removed."
+          message={"The conversation you’re looking for doesn’t exist or has been removed."}
           onRetry={() => router.back()}
           retryLabel="Go Back"
         />
@@ -213,7 +241,7 @@ export default function ChatDetailScreen() {
             </TouchableOpacity>
             <View style={styles.avatarContainer}>
               <Avatar uri={chatParticipant.avatarUrl || ''} size={48} />
-              <View style={styles.statusDotOffline} />
+              <View style={[styles.statusDot, styles.statusDotOffline]} />
             </View>
             <View style={styles.userInfo}>
               <Text style={styles.userName}>{chatParticipant.name}</Text>

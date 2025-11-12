@@ -64,7 +64,13 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         try {
           await api.post('/themes/users/dark-mode', { darkMode: newDarkMode });
         } catch (backendError) {
-          console.warn('Backend sync failed for dark mode:', backendError);
+          console.warn('Backend sync failed for dark mode, queueing:', backendError);
+          try {
+            const { default: syncManager } = await import('../services/syncManager');
+            await syncManager.queueRequest('POST', '/themes/users/dark-mode', { darkMode: newDarkMode });
+          } catch (e) {
+            console.error('Failed to queue dark mode update:', e);
+          }
         }
       }
     } catch (error) {
@@ -80,7 +86,13 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         try {
           await api.post('/themes/users/theme', { themeId: newTheme });
         } catch (backendError) {
-          console.warn('Backend sync failed for theme:', backendError);
+          console.warn('Backend sync failed for theme, queueing:', backendError);
+          try {
+            const { default: syncManager } = await import('../services/syncManager');
+            await syncManager.queueRequest('POST', '/themes/users/theme', { themeId: newTheme });
+          } catch (e) {
+            console.error('Failed to queue theme update:', e);
+          }
         }
       }
     } catch (error) {

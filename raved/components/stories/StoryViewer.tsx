@@ -10,7 +10,6 @@ import {
   StyleSheet,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useRouter, useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { theme } from '../../theme';
 import { Story } from '../../types';
@@ -33,44 +32,44 @@ export const StoryViewer: React.FC<StoryViewerProps> = ({
 }) => {
   const [currentIndex, setCurrentIndex] = useState(initialIndex);
   const progressAnim = useRef(new Animated.Value(0)).current;
-  const [paused, setPaused] = useState(false);
+  const [_paused, _setPaused] = useState(false);
 
   const currentStory = stories[currentIndex];
 
-  useEffect(() => {
-    if (visible && currentStory && !paused) {
-      startProgressAnimation();
+  const nextStory = React.useCallback(() => {
+    if (currentIndex < stories.length - 1) {
+      setCurrentIndex((i) => i + 1);
+    } else {
+      onClose();
     }
-  }, [visible, currentIndex, paused]);
+  }, [currentIndex, stories.length, onClose]);
 
-  const startProgressAnimation = () => {
+  const startProgressAnimation = React.useCallback(() => {
     progressAnim.setValue(0);
     Animated.timing(progressAnim, {
       toValue: 1,
-      duration: currentStory.duration || 2500,
+      duration: (currentStory?.duration as number | undefined) || 2500,
       useNativeDriver: false,
     }).start(({ finished }) => {
-      if (finished && !paused) {
+      if (finished && !_paused) {
         nextStory();
       }
     });
-  };
+  }, [progressAnim, currentStory, _paused, nextStory]);
 
-  const nextStory = () => {
-    if (currentIndex < stories.length - 1) {
-      setCurrentIndex(currentIndex + 1);
-    } else {
-      onClose();
+  useEffect(() => {
+    if (visible && currentStory && !_paused) {
+      startProgressAnimation();
     }
-  };
+  }, [visible, currentIndex, _paused, currentStory, startProgressAnimation]);
 
-  const previousStory = () => {
+  const previousStory = React.useCallback(() => {
     if (currentIndex > 0) {
-      setCurrentIndex(currentIndex - 1);
+      setCurrentIndex((i) => Math.max(0, i - 1));
     } else {
       onClose();
     }
-  };
+  }, [currentIndex, onClose]);
 
   const handleTap = (event: any) => {
     const { locationX } = event.nativeEvent;

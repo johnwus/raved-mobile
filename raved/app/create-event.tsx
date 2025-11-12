@@ -15,14 +15,10 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { theme } from '../theme';
 import { Input } from '../components/ui/Input';
 import { Toggle } from '../components/ui/Toggle';
-import { useAuth } from '../hooks/useAuth';
-import { Event } from '../types';
-import { mockImages } from '../utils/mockData';
 import { eventsApi } from '../services/eventsApi';
 
 export default function CreateEventScreen() {
   const router = useRouter();
-  const { user } = useAuth();
   
   const [title, setTitle] = useState('');
   const [date, setDate] = useState('');
@@ -36,7 +32,7 @@ export default function CreateEventScreen() {
   const [requireRegistration, setRequireRegistration] = useState(true);
   const [allowWaitlist, setAllowWaitlist] = useState(true);
   const [sendReminders, setSendReminders] = useState(true);
-  const [loading, setLoading] = useState(false);
+  const [_loading, _setLoading] = useState(false);
 
   const categoryOptions = [
     { value: 'fashion', label: 'Fashion Show' },
@@ -60,7 +56,7 @@ export default function CreateEventScreen() {
     }
 
     try {
-      setLoading(true);
+      _setLoading(true);
       
       // Format date and time
       const eventDate = new Date(date);
@@ -90,7 +86,7 @@ export default function CreateEventScreen() {
       console.error('Failed to create event:', error);
       Alert.alert('Error', error.message || 'Failed to create event');
     } finally {
-      setLoading(false);
+      _setLoading(false);
     }
   };
 

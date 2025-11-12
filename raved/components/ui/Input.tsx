@@ -4,14 +4,13 @@ import {
   View,
   Text,
   StyleSheet,
-  TouchableOpacity,
   ViewStyle,
   TextStyle,
-  KeyboardTypeOptions
+  TextInputProps,
 } from 'react-native';
 import { theme } from '../../theme';
 
-interface InputProps {
+interface InputProps extends Omit<TextInputProps, 'style' | 'onChangeText' | 'value'> {
   value: string;
   onChangeText: (text: string) => void;
   placeholder?: string;
@@ -20,10 +19,6 @@ interface InputProps {
   helperText?: string;
   leftIcon?: React.ReactNode;
   rightIcon?: React.ReactNode;
-  secureTextEntry?: boolean;
-  multiline?: boolean;
-  numberOfLines?: number;
-  keyboardType?: KeyboardTypeOptions;
   style?: ViewStyle;
   inputStyle?: TextStyle;
 }
@@ -43,6 +38,7 @@ export const Input: React.FC<InputProps> = ({
   keyboardType = 'default',
   style,
   inputStyle,
+  ...rest
 }) => {
   return (
     <View style={style}>
@@ -74,6 +70,7 @@ export const Input: React.FC<InputProps> = ({
             multiline && styles.multilineInput,
             inputStyle,
           ]}
+          {...rest}
         />
         
         {rightIcon && (

@@ -16,7 +16,6 @@ import * as ImagePicker from 'expo-image-picker';
 import { theme } from '../theme';
 import { Avatar } from '../components/ui/Avatar';
 import { useAuth } from '../hooks/useAuth';
-import { mockUsers } from '../utils/mockData';
 
 type AvatarStyle = 'original' | 'circle' | 'square' | 'rounded';
 type BorderStyle = 'none' | 'simple' | 'gradient' | 'glow';
@@ -52,7 +51,7 @@ export default function AvatarPickerScreen() {
     }
 
     const result = await ImagePicker.launchCameraAsync({
-      mediaTypes: ImagePicker.MediaType.Images,
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
       allowsEditing: true,
       aspect: [1, 1],
       quality: 0.8,
@@ -71,7 +70,7 @@ export default function AvatarPickerScreen() {
     }
 
     const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaType.Images,
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
       allowsEditing: true,
       aspect: [1, 1],
       quality: 0.8,

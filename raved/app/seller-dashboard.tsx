@@ -13,7 +13,6 @@ import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { theme } from '../theme';
-import { Avatar } from '../components/ui/Avatar';
 import { useStore } from '../hooks/useStore';
 import { useAuth } from '../hooks/useAuth';
 import { StoreItem } from '../types';
@@ -27,35 +26,13 @@ export default function SellerDashboardScreen() {
   const [myItems, setMyItems] = useState<StoreItem[]>([]);
   const [totalItems, setTotalItems] = useState(0);
   const [totalSales, setTotalSales] = useState(0);
-  const [loading, setLoading] = useState(true);
+  const [_loading, _setLoading] = useState(true);
 
-  useEffect(() => {
-    if (!isPremium) {
-      Alert.alert(
-        'Premium Required',
-        'Seller dashboard is only available for premium members.',
-        [
-          { text: 'Cancel', style: 'cancel', onPress: () => router.back() },
-          {
-            text: 'Upgrade',
-            onPress: () => {
-              router.back();
-              router.push('/subscription' as any);
-            },
-          },
-        ]
-      );
-      return;
-    }
-
-    loadMyItems();
-  }, [isPremium, user?.id]);
-
-  const loadMyItems = async () => {
+  const loadMyItems = React.useCallback(async () => {
     if (!user?.id) return;
     
     try {
-      setLoading(true);
+      _setLoading(true);
       const response = await storeApi.getStoreItems({ page: 1, limit: 100 });
       
       // Filter items by current user
@@ -78,9 +55,31 @@ export default function SellerDashboardScreen() {
       setTotalItems(0);
       setTotalSales(0);
     } finally {
-      setLoading(false);
+      _setLoading(false);
     }
-  };
+  }, [user?.id]);
+
+  useEffect(() => {
+    if (!isPremium) {
+      Alert.alert(
+        'Premium Required',
+        'Seller dashboard is only available for premium members.',
+        [
+          { text: 'Cancel', style: 'cancel', onPress: () => router.back() },
+          {
+            text: 'Upgrade',
+            onPress: () => {
+              router.back();
+              router.push('/subscription' as any);
+            },
+          },
+        ]
+      );
+      return;
+    }
+
+    loadMyItems();
+  }, [isPremium, loadMyItems, router]);
 
   if (!isPremium) {
     return null;
@@ -95,11 +94,11 @@ export default function SellerDashboardScreen() {
     router.push(`/product/${itemId}` as any);
   };
 
-  const handleEditItem = (itemId: string) => {
+  const handleEditItem = (_itemId: string) => {
     Alert.alert('Coming Soon', 'Item editing feature coming soon!');
   };
 
-  const handleDiscount = (itemId: string) => {
+  const handleDiscount = (_itemId: string) => {
     Alert.alert('Coming Soon', 'Discount feature coming soon!');
   };
 

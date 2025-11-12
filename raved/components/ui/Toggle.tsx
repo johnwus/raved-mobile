@@ -22,7 +22,7 @@ export const Toggle: React.FC<ToggleProps> = ({
       tension: 100,
       friction: 8,
     }).start();
-  }, [value]);
+  }, [value, translateX]);
 
   const handlePress = () => {
     if (!disabled) {

@@ -202,7 +202,7 @@ export default function NotificationSettingsScreen() {
             style={styles.testButton}
             onPress={async () => {
               try {
-                const response = await api.post('/notifications/test', {
+                const _response = await api.post('/notifications/test', {
                   userId: user?.id,
                   message: 'This is a test notification to verify your settings are working.',
                 });

@@ -12,8 +12,8 @@ import { useRouter, useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { theme } from '../../theme';
 import { Avatar } from '../../components/ui/Avatar';
-import { Event } from '../../types';
-import { mockEvents } from '../../app/(tabs)/events';
+import { eventsApi } from '../../services/eventsApi';
+import type { Event } from '../../services/eventsApi';
 
 export default function EventDetailScreen() {
   const router = useRouter();
@@ -22,13 +22,19 @@ export default function EventDetailScreen() {
   const [attending, setAttending] = useState(false);
 
   useEffect(() => {
-    if (id) {
-      const foundEvent = mockEvents.find(e => e.id === id);
-      if (foundEvent) {
-        setEvent(foundEvent);
-        setAttending(foundEvent.attending);
+    const fetchEvent = async () => {
+      if (!id) return;
+      try {
+        const data = await eventsApi.getEvent(id);
+        if (data && data.event) {
+          setEvent(data.event as Event);
+          setAttending(!!data.event.attending);
+        }
+      } catch (e) {
+        console.error('Failed to load event:', e);
       }
-    }
+    };
+    fetchEvent();
   }, [id]);
 
   if (!event) {
@@ -49,10 +55,10 @@ export default function EventDetailScreen() {
     // TODO: Update event in store/state
   };
 
-  const isFull = event.attendees >= event.max;
+  const isFull = event.maxAttendees ? event.attendees >= event.maxAttendees : false;
   const dateParts = event.date.split('-');
-  const month = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][parseInt(dateParts[1]) - 1];
-  const day = parseInt(dateParts[2]);
+  const _month = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][parseInt(dateParts[1]) - 1];
+  const _day = parseInt(dateParts[2]);
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
@@ -83,9 +89,9 @@ export default function EventDetailScreen() {
 
           {/* Organizer */}
           <View style={styles.organizerRow}>
-            <Avatar uri={event.orgAvatar} size={20} />
+            <Avatar uri={event.organizer?.avatar || ''} size={20} />
             <Text style={styles.organizerText}>
-              by {event.organizer}
+              by {event.organizer?.name || 'Organizer'}
             </Text>
           </View>
 
@@ -126,7 +132,7 @@ export default function EventDetailScreen() {
             <View style={styles.attendeeInfo}>
               <Ionicons name="people-outline" size={16} color="#6B7280" />
               <Text style={styles.attendeeText}>
-                {event.attendees}/{event.max} attending
+                {event.attendees}/{event.maxAttendees || '-'} attending
               </Text>
               {isFull && (
                 <Text style={styles.fullText}>Full</Text>

@@ -42,9 +42,24 @@ export const redis = new Redis(CONFIG.REDIS_URL, {
 redis.on('connect', () => console.log('✅ Redis Connected'));
 redis.on('error', (err) => console.error('❌ Redis Error:', err));
 
+let schemaInitialized = false;
+
 export async function initializePostgresSchema() {
+  // Prevent concurrent initialization
+  if (schemaInitialized) {
+    console.log('✅ PostgreSQL Schema already initialized');
+    return;
+  }
+
   const client = await pgPool.connect();
   try {
+    // Acquire advisory lock to prevent concurrent schema initialization
+    const lockResult = await client.query('SELECT pg_try_advisory_lock(123456789)');
+    if (!lockResult.rows[0].pg_try_advisory_lock) {
+      console.log('⏳ Another process is initializing PostgreSQL schema, skipping...');
+      return;
+    }
+
     await client.query('BEGIN');
     
     // Users Table
@@ -972,9 +987,22 @@ export async function initializePostgresSchema() {
     `);
 
     await client.query('COMMIT');
+    
+    // Release advisory lock
+    await client.query('SELECT pg_advisory_unlock(123456789)');
+    
+    schemaInitialized = true;
     console.log('✅ PostgreSQL Schema Initialized');
   } catch (error) {
     await client.query('ROLLBACK');
+    
+    // Release advisory lock on error
+    try {
+      await client.query('SELECT pg_advisory_unlock(123456789)');
+    } catch (unlockError) {
+      // Ignore unlock errors
+    }
+    
     console.error('❌ PostgreSQL Schema Error:', error);
     throw error;
   } finally {

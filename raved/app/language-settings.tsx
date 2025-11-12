@@ -12,7 +12,6 @@ import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useTranslation } from 'react-i18next';
 import { theme } from '../theme';
-import { Input } from '../components/ui/Input';
 import { useAuth } from '../hooks/useAuth';
 
 const languages = [
@@ -52,23 +51,48 @@ export default function LanguageSettingsScreen() {
         dateFormat,
         currency,
       });
+      // Persist locally for offline continuity
+      const { Storage } = await import('../services/storage');
+      await Storage.set('language', language as any);
+      await Storage.set('dateFormat', dateFormat as any);
+      await Storage.set('currency', currency as any);
       Alert.alert('Success', 'Preferences saved successfully');
     } catch (error) {
-      console.error('Failed to save preferences:', error);
-      Alert.alert('Error', 'Failed to save preferences');
+      console.error('Failed to save preferences, queueing:', error);
+      try {
+        const { default: syncManager } = await import('../services/syncManager');
+        await syncManager.queueRequest('PUT', '/auth/language-preferences', {
+          language,
+          dateFormat,
+          currency,
+        });
+        const { Storage } = await import('../services/storage');
+        await Storage.set('language', language as any);
+        await Storage.set('dateFormat', dateFormat as any);
+        await Storage.set('currency', currency as any);
+        Alert.alert('Saved Offline', 'Preferences will sync when online.');
+      } catch {
+        Alert.alert('Error', 'Failed to save preferences');
+      }
     }
   };
 
   const handleLanguageChange = async (lang: string) => {
     setLanguage(lang as any);
     await i18n.changeLanguage(lang);
-    
-    // Update user language preference in backend
+    // Persist locally for immediate UX
+    const { Storage } = await import('../services/storage');
+    await Storage.set('language', lang as any);
+    // Update user language preference
     try {
       const api = (await import('../services/api')).default;
       await api.put('/auth/language-preferences', { language: lang });
     } catch (error) {
-      console.error('Failed to sync language preference:', error);
+      console.warn('Failed to sync language preference, queueing:', error);
+      try {
+        const { default: syncManager } = await import('../services/syncManager');
+        await syncManager.queueRequest('PUT', '/auth/language-preferences', { language: lang });
+      } catch {}
     }
   };
 

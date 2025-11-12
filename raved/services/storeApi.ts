@@ -123,22 +123,7 @@ export const storeApi = {
   // Cart Operations
   getUserCart: async () => {
     const response = await api.get('/cart');
-    return response.data;
-  },
-
-  addToCart: async (itemId: string, quantity: number = 1) => {
-    const response = await api.post('/cart/add', { itemId, quantity });
-    return response.data;
-  },
-
-  updateCartItem: async (cartItemId: string, quantity: number) => {
-    const response = await api.put(`/cart/item/${cartItemId}`, { quantity });
-    return response.data;
-  },
-
-  removeFromCart: async (cartItemId: string) => {
-    const response = await api.delete(`/cart/item/${cartItemId}`);
-    return response.data;
+    return response.data as { success?: boolean; items: any[]; total?: number; count?: number };
   },
 
   clearCart: async () => {
@@ -146,19 +131,40 @@ export const storeApi = {
     return response.data;
   },
 
+  addToCart: async (itemId: string, quantity: number = 1) => {
+    // Backend expects POST /cart/items with { itemId, quantity }
+    const response = await api.post('/cart/items', { itemId, quantity });
+    return response.data;
+  },
+
+  updateCartItem: async (cartItemId: string, quantity: number) => {
+    // Backend expects PATCH /cart/items/:cartItemId with { quantity }
+    const response = await api.patch(`/cart/items/${cartItemId}`, { quantity });
+    return response.data;
+  },
+
+  removeFromCart: async (cartItemId: string) => {
+    // Backend expects DELETE /cart/items/:cartItemId
+    const response = await api.delete(`/cart/items/${cartItemId}`);
+    return response.data;
+  },
+
   // Wishlist Operations
   getUserWishlist: async () => {
-    const response = await api.get('/cart/wishlist');
+    // Backend exposes GET /wishlist (router mounted at '/')
+    const response = await api.get('/wishlist');
     return response.data;
   },
 
   addToWishlist: async (itemId: string) => {
-    const response = await api.post(`/cart/wishlist/${itemId}`);
+    // Backend expects POST /items/:itemId/save
+    const response = await api.post(`/items/${itemId}/save`);
     return response.data;
   },
 
   removeFromWishlist: async (itemId: string) => {
-    const response = await api.delete(`/cart/wishlist/${itemId}`);
+    // Backend expects DELETE /items/:itemId/save
+    const response = await api.delete(`/items/${itemId}/save`);
     return response.data;
   },
 
@@ -175,12 +181,14 @@ export const storeApi = {
 
   // Additional operations for full backend compatibility
   saveItem: async (itemId: string) => {
-    const response = await api.post(`/store/items/${itemId}/save`);
+    // Alias to wishlist save
+    const response = await api.post(`/items/${itemId}/save`);
     return response.data;
   },
 
   unsaveItem: async (itemId: string) => {
-    const response = await api.delete(`/store/items/${itemId}/save`);
+    // Alias to wishlist unsave
+    const response = await api.delete(`/items/${itemId}/save`);
     return response.data;
   },
 

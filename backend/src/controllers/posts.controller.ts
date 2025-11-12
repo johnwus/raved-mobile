@@ -1,6 +1,6 @@
 import { Request, Response } from 'express';
 import { validationResult } from 'express-validator';
-import { Post, Comment, Like } from '../models/mongoose';
+import { Post, Comment, Like, SavedPost } from '../models/mongoose';
 import { pgPool } from '../config/database';
 import { getTimeAgo } from '../utils';
 import OfflineDataService from '../services/offline-data.service';
@@ -223,6 +223,72 @@ export const createPost = async (req: Request, res: Response) => {
     } catch (error) {
         console.error('Create Post Error:', error);
         res.status(500).json({ error: 'Failed to create post' });
+    }
+};
+
+export const savePost = async (req: Request, res: Response) => {
+    const userId = req.user.id;
+    const { postId } = req.params as any;
+    try {
+        const post = await Post.findById(postId);
+        if (!post || post.deletedAt) {
+            return res.status(404).json({ success: false, error: 'Post not found' });
+        }
+        await SavedPost.updateOne(
+            { userId, postId },
+            { $setOnInsert: { userId, postId, createdAt: new Date() } },
+            { upsert: true }
+        );
+        // Increment savesCount (best-effort)
+        await Post.updateOne({ _id: postId }, { $inc: { savesCount: 1 } });
+        return res.json({ success: true });
+    } catch (error: any) {
+        if (error?.code === 11000) {
+            return res.json({ success: true }); // already saved
+        }
+        console.error('Save Post Error:', error);
+        return res.status(500).json({ success: false, error: 'Failed to save post' });
+    }
+};
+
+export const unsavePost = async (req: Request, res: Response) => {
+    const userId = req.user.id;
+    const { postId } = req.params as any;
+    try {
+        const result = await SavedPost.deleteOne({ userId, postId });
+        if (result.deletedCount) {
+            await Post.updateOne({ _id: postId }, { $inc: { savesCount: -1 } });
+        }
+        return res.json({ success: true });
+    } catch (error) {
+        console.error('Unsave Post Error:', error);
+        return res.status(500).json({ success: false, error: 'Failed to unsave post' });
+    }
+};
+
+export const sharePost = async (req: Request, res: Response) => {
+    const userId = req.user.id;
+    const { postId } = req.params as any;
+    try {
+        const post = await Post.findById(postId);
+        if (!post || post.deletedAt) {
+            return res.status(404).json({ success: false, error: 'Post not found' });
+        }
+        await Post.updateOne({ _id: postId }, { $inc: { sharesCount: 1 } });
+        // Optionally persist share in Postgres 'share' table if present
+        try {
+            await pgPool.query(
+                'INSERT INTO shares (user_id, post_id, created_at) VALUES ($1, $2, CURRENT_TIMESTAMP) ON CONFLICT DO NOTHING',
+                [userId, postId]
+            );
+        } catch (e: any) {
+            // Non-fatal if PG insert fails
+            console.warn('Share PG insert failed:', e?.message || e);
+        }
+        return res.json({ success: true });
+    } catch (error) {
+        console.error('Share Post Error:', error);
+        return res.status(500).json({ success: false, error: 'Failed to share post' });
     }
 };
 
