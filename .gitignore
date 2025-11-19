@@ -2,5 +2,11 @@
 /backend/node_modules/
 /raved/node_modules/
 
+#Ignore keys
+/backend/keys/
+
 # Optional: ignore root node_modules if present
 node_modules/
+
+# Ignore environment variables and other sensitive files
+
