@@ -3,20 +3,41 @@ import { Pool } from 'pg';
 import Redis from 'ioredis';
 import { CONFIG } from './index';
 
-// PostgreSQL Connection Pool
+// PostgreSQL Connection Pool with improved settings
 export const pgPool = new Pool({
   connectionString: CONFIG.POSTGRES_URL,
   max: 20,
+  min: 2, // Minimum connections to maintain
   idleTimeoutMillis: 30000,
-  connectionTimeoutMillis: 2000,
+  connectionTimeoutMillis: 10000, // Increased to 10 seconds for Neon wake-up
+  allowExitOnIdle: true,
 });
 
 // MongoDB Connection
 export const connectDB = async () => {
   try {
+    // In dev, enable autoIndex; in prod, we explicitly sync indexes after connect
+    mongoose.set('autoIndex', CONFIG.NODE_ENV !== 'production');
     await mongoose.connect(CONFIG.MONGODB_URL, {
     });
     console.log('✅ MongoDB Connected');
+
+    if (CONFIG.NODE_ENV === 'production') {
+      // Ensure indexes are created explicitly in production
+      const { Post } = await import('../models/mongoose/post.model');
+      const { Comment } = await import('../models/mongoose/comment.model');
+      const { Like } = await import('../models/mongoose/like.model');
+      const { Notification } = await import('../models/mongoose/notification.model');
+      const { Story } = await import('../models/mongoose/story.model');
+      await Promise.all([
+        Post.syncIndexes(),
+        Comment.syncIndexes(),
+        Like.syncIndexes(),
+        Notification.syncIndexes(),
+        Story.syncIndexes(),
+      ]);
+      console.log('✅ MongoDB Indexes synced (production)');
+    }
   } catch (err) {
     console.error('❌ MongoDB Error:', err);
     process.exit(1);
@@ -53,6 +74,9 @@ export async function initializePostgresSchema() {
 
   const client = await pgPool.connect();
   try {
+    // Wake up Neon database if paused by making a simple query
+    await client.query('SELECT 1');
+
     // Acquire advisory lock to prevent concurrent schema initialization
     const lockResult = await client.query('SELECT pg_try_advisory_lock(123456789)');
     if (!lockResult.rows[0].pg_try_advisory_lock) {
@@ -139,7 +163,7 @@ export async function initializePostgresSchema() {
         id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
         participant1_id UUID REFERENCES users(id) ON DELETE CASCADE,
         participant2_id UUID REFERENCES users(id) ON DELETE CASCADE,
-        last_message_id VARCHAR(255),
+        last_message_content TEXT,
         last_message_at TIMESTAMP,
         unread_count1 INTEGER DEFAULT 0,
         unread_count2 INTEGER DEFAULT 0,
@@ -154,6 +178,34 @@ export async function initializePostgresSchema() {
       CREATE INDEX IF NOT EXISTS idx_conversations_participant2 ON conversations(participant2_id);
       CREATE INDEX IF NOT EXISTS idx_conversations_last_message ON conversations(last_message_at DESC);
       CREATE INDEX IF NOT EXISTS idx_conversations_deleted ON conversations(deleted_at);
+
+      -- Add last_message_content column if it doesn't exist
+      ALTER TABLE conversations ADD COLUMN IF NOT EXISTS last_message_content TEXT;
+
+      -- Device status table for offline sync
+      CREATE TABLE IF NOT EXISTS device_status (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        user_id UUID REFERENCES users(id) ON DELETE CASCADE,
+        device_id VARCHAR(255) NOT NULL,
+        is_online BOOLEAN DEFAULT TRUE,
+        last_seen TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        connection_type VARCHAR(20),
+        network_quality VARCHAR(20),
+        battery_level INTEGER CHECK (battery_level >= 0 AND battery_level <= 100),
+        app_version VARCHAR(50),
+        platform VARCHAR(20) CHECK (platform IN ('ios', 'android', 'web')),
+        sync_enabled BOOLEAN DEFAULT TRUE,
+        last_sync_attempt TIMESTAMP,
+        last_successful_sync TIMESTAMP,
+        pending_sync_items INTEGER DEFAULT 0,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE(user_id, device_id)
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_device_status_user ON device_status(user_id);
+      CREATE INDEX IF NOT EXISTS idx_device_status_online ON device_status(is_online);
+      CREATE INDEX IF NOT EXISTS idx_device_status_last_seen ON device_status(last_seen DESC);
     `);
     
     // Messages Table

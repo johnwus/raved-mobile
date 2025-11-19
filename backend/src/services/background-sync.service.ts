@@ -180,7 +180,7 @@ export class BackgroundSyncService {
     }
     job.progress = 80;
 
-    // Get latest versions for key entities
+    // Get latest versions for keys entities
     const versionStats = await DataVersioningService.getVersionStats(undefined, undefined, userId);
     job.progress = 100;
 

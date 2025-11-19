@@ -38,10 +38,45 @@ const getStoreItems = async (req, res) => {
         // Pagination
         query += ` LIMIT $${paramIndex} OFFSET $${paramIndex + 1}`;
         params.push(parseInt(limit), offset);
-        const result = await database_1.pgPool.query(query, params);
-        // Get seller info for each item
+        // Retry logic for main query
+        let result;
+        let retries = 3;
+        while (retries > 0) {
+            try {
+                result = await database_1.pgPool.query(query, params);
+                break;
+            }
+            catch (dbError) {
+                retries--;
+                if (retries === 0 || !dbError.message?.includes('Connection terminated')) {
+                    throw dbError;
+                }
+                await new Promise(resolve => setTimeout(resolve, 100));
+            }
+        }
+        if (!result) {
+            throw new Error('Failed to query store items after retries');
+        }
+        // Get seller info for each item with retry
         const sellerIds = [...new Set(result.rows.map(item => item.seller_id))];
-        const sellers = await database_1.pgPool.query('SELECT id, username, first_name, last_name, avatar_url, faculty FROM users WHERE id = ANY($1)', [sellerIds]);
+        let sellers;
+        retries = 3;
+        while (retries > 0) {
+            try {
+                sellers = await database_1.pgPool.query('SELECT id, username, first_name, last_name, avatar_url, faculty FROM users WHERE id = ANY($1)', [sellerIds]);
+                break;
+            }
+            catch (dbError) {
+                retries--;
+                if (retries === 0 || !dbError.message?.includes('Connection terminated')) {
+                    throw dbError;
+                }
+                await new Promise(resolve => setTimeout(resolve, 100));
+            }
+        }
+        if (!sellers) {
+            throw new Error('Failed to query sellers after retries');
+        }
         const sellerMap = {};
         sellers.rows.forEach(s => {
             sellerMap[s.id] = {

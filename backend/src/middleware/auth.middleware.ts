@@ -42,17 +42,36 @@ export const authenticate = async (req: Request, res: Response, next: NextFuncti
       });
     }
 
-    // Get user from database with subscription info
-    const result = await pgPool.query(`
-      SELECT
-        u.*,
-        s.status as subscription_status,
-        s.expires_at as subscription_expires_at,
-        s.plan_type
-      FROM users u
-      LEFT JOIN subscriptions s ON u.id = s.user_id AND s.status = 'active'
-      WHERE u.id = $1 AND u.deleted_at IS NULL
-    `, [userId]);
+    // Get user from database with subscription info (with retry logic)
+    let result;
+    let retries = 3;
+    while (retries > 0) {
+      try {
+        result = await pgPool.query(`
+          SELECT
+            u.*,
+            s.status as subscription_status,
+            s.expires_at as subscription_expires_at,
+            s.plan_type
+          FROM users u
+          LEFT JOIN subscriptions s ON u.id = s.user_id AND s.status = 'active'
+          WHERE u.id = $1 AND u.deleted_at IS NULL
+        `, [userId]);
+        break; // Success, exit retry loop
+      } catch (dbError: any) {
+        retries--;
+        if (retries === 0 || !dbError.message?.includes('Connection terminated')) {
+          throw dbError; // Re-throw if not a connection issue or out of retries
+        }
+        console.warn(`Database query failed, retrying... (${3 - retries}/3)`);
+        // Wait 100ms before retry
+        await new Promise(resolve => setTimeout(resolve, 100));
+      }
+    }
+
+    if (!result) {
+      throw new Error('Failed to query user data after retries');
+    }
 
     if (result.rows.length === 0) {
       return res.status(401).json({
@@ -191,19 +210,35 @@ export const optionalAuth = async (req: Request, res: Response, next: NextFuncti
       return next();
     }
 
-    // Get user from database (optional auth doesn't fail on missing user)
-    const result = await pgPool.query(`
-      SELECT
-        u.*,
-        s.status as subscription_status,
-        s.expires_at as subscription_expires_at,
-        s.plan_type
-      FROM users u
-      LEFT JOIN subscriptions s ON u.id = s.user_id AND s.status = 'active'
-      WHERE u.id = $1 AND u.deleted_at IS NULL AND u.status != 'suspended'
-  `, [userId]);
+    // Get user from database (optional auth doesn't fail on missing user) with retry
+    let result;
+    let retries = 3;
+    while (retries > 0) {
+      try {
+        result = await pgPool.query(`
+          SELECT
+            u.*,
+            s.status as subscription_status,
+            s.expires_at as subscription_expires_at,
+            s.plan_type
+          FROM users u
+          LEFT JOIN subscriptions s ON u.id = s.user_id AND s.status = 'active'
+          WHERE u.id = $1 AND u.deleted_at IS NULL AND u.status != 'suspended'
+      `, [userId]);
+        break;
+      } catch (dbError: any) {
+        retries--;
+        if (retries === 0 || !dbError.message?.includes('Connection terminated')) {
+          // For optional auth, don't throw on database errors
+          result = { rows: [] };
+          break;
+        }
+        console.warn(`Optional auth query failed, retrying... (${3 - retries}/3)`);
+        await new Promise(resolve => setTimeout(resolve, 100));
+      }
+    }
 
-    if (result.rows.length > 0) {
+    if (result && result.rows.length > 0) {
       const user = result.rows[0];
       req.user = {
         ...user,

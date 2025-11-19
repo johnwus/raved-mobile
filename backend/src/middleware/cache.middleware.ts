@@ -15,7 +15,7 @@ export function cache(options: CacheOptions = {}) {
       return next();
     }
 
-    // Generate cache key
+    // Generate cache keys
     const cacheKey = options.key || generateCacheKey(req);
     const fullKey = `${CONFIG.REDIS_CACHE_PREFIX}${cacheKey}`;
 
@@ -75,7 +75,7 @@ export function clearCacheOnChange(pattern: string) {
 }
 
 function generateCacheKey(req: Request): string {
-  // Generate a unique key based on request
+  // Generate a unique keys based on request
   const parts = [
     req.method,
     req.originalUrl,

@@ -1,8 +1,16 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import NetInfo from '@react-native-community/netinfo';
-import { v4 as uuidv4 } from 'uuid';
 import api from './api';
 import socketService from './socket';
+
+// Simple UUID generator for React Native
+function generateUUID(): string {
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+    const r = Math.random() * 16 | 0;
+    const v = c === 'x' ? r : (r & 0x3 | 0x8);
+    return v.toString(16);
+  });
+}
 
 export interface QueueItem {
   id: string;
@@ -133,7 +141,7 @@ class OfflineQueueService {
     } = {}
   ): Promise<string> {
     const queueItem: QueueItem = {
-      id: uuidv4(),
+      id: generateUUID(),
       method,
       url,
       data,
@@ -402,7 +410,7 @@ class OfflineQueueService {
    */
   private async createConflict(localData: any, serverVersion: number): Promise<void> {
     const conflict: SyncConflict = {
-      id: uuidv4(),
+      id: generateUUID(),
       entityType: localData.entityType,
       entityId: localData.entityId,
       localVersion: localData.version,

@@ -41,7 +41,7 @@ router.post('/conflicts/auto-resolve', [
     validation_middleware_1.handleValidationErrors,
 ], offline_sync_controller_1.autoResolveConflicts);
 // Device status management
-router.post('/device/status', [
+router.post('/device-status', [
     (0, express_validator_1.body)('deviceId').isString().notEmpty().withMessage('Device ID is required'),
     (0, express_validator_1.body)('isOnline').isBoolean().withMessage('isOnline must be a boolean'),
     (0, express_validator_1.body)('connectionType').optional().isIn(['wifi', 'cellular', 'ethernet', 'unknown']).withMessage('Invalid connection type'),
@@ -55,7 +55,7 @@ router.post('/device/status', [
     (0, express_validator_1.body)('pendingSyncItems').optional().isInt({ min: 0 }).withMessage('Pending sync items must be non-negative'),
     validation_middleware_1.handleValidationErrors,
 ], offline_sync_controller_1.updateDeviceStatus);
-router.get('/device/status', [
+router.get('/device-status', [
     (0, express_validator_1.query)('includeOffline').optional().isBoolean().withMessage('includeOffline must be a boolean'),
     validation_middleware_1.handleValidationErrors,
 ], offline_sync_controller_1.getDeviceStatuses);

@@ -85,17 +85,9 @@ class SyncManager {
    * Register device with backend for sync tracking
    */
   private async registerDevice() {
-    if (!this.deviceId) return;
-
-    try {
-      await api.post('/offline-sync/register-device', {
-        deviceId: this.deviceId,
-        platform: 'web', // or get from device info
-        appVersion: '1.0.0',
-      });
-    } catch (error) {
-      console.error('Failed to register device:', error);
-    }
+    // Device registration is handled by device-token service
+    // This endpoint doesn't exist, so skip this call
+    console.log('Device registration handled by device-token service');
   }
 
   /**
@@ -138,17 +130,33 @@ class SyncManager {
    * Update device online status
    */
   private async updateDeviceStatus(isSyncing: boolean) {
-    if (!this.deviceId) return;
+    if (!this.deviceId) {
+      console.warn('Cannot update device status: deviceId not set');
+      return;
+    }
 
     try {
-      await api.post('/offline-sync/device-status', {
+      const payload = {
         deviceId: this.deviceId,
         isOnline: true,
-        isSyncing,
-        lastSeen: new Date(),
+        appVersion: '1.0.0',
+        platform: 'web',
+        syncEnabled: true,
+        lastSyncAttempt: new Date(),
+        pendingSyncItems: 0,
+      };
+
+      console.log('Updating device status with payload:', payload);
+
+      const response = await api.post('/offline-sync/device-status', payload);
+      console.log('Device status updated successfully:', response.data);
+    } catch (error: any) {
+      console.error('Failed to update device status:', {
+        error: error.message,
+        status: error.response?.status,
+        data: error.response?.data,
+        config: error.config,
       });
-    } catch (error) {
-      console.error('Failed to update device status:', error);
     }
   }
 
@@ -205,13 +213,9 @@ class SyncManager {
     }
 
     // If not available offline, try to fetch and store
-    try {
-      const response = await api.get(`/${entityType}/${entityId}`);
-      await this.storeOfflineData(entityType, entityId, response.data);
-      return response.data;
-    } catch (error) {
-      throw error;
-    }
+    const response = await api.get(`/${entityType}/${entityId}`);
+    await this.storeOfflineData(entityType, entityId, response.data);
+    return response.data;
   }
 
   /**

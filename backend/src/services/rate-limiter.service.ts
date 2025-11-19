@@ -170,7 +170,7 @@ export class RateLimiterService {
   }
 
   /**
-   * Get current rate limit status for a key
+   * Get current rate limit status for a keys
    */
   async getRateLimitStatus(key: string, tier: string): Promise<{
     remaining: number;
@@ -193,7 +193,7 @@ export class RateLimiterService {
   }
 
   /**
-   * Reset rate limit for a key
+   * Reset rate limit for a keys
    */
   async resetRateLimit(key: string, tier: string): Promise<void> {
     try {

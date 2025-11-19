@@ -85,16 +85,19 @@ export default function FacultiesScreen() {
   const loadFacultyData = async (facultyId: string) => {
     try {
       setLoadingPosts(true);
+      console.log('🎓 Loading faculty data for:', facultyId);
       const [stats, postsData] = await Promise.all([
         facultiesApi.getFacultyStats(facultyId),
         postsApi.getFacultyPosts(facultyId, 1, 20),
       ]);
+      console.log('🎓 Faculty posts data:', JSON.stringify(postsData, null, 2));
+      console.log('🎓 Faculty posts count:', postsData.posts?.length || 0);
       setFacultyStats(stats);
       setFacultyPosts(postsData.posts || []);
       setHasMore(postsData.pagination?.hasMore || false);
       setPage(1);
     } catch (error) {
-      console.error('Failed to load faculty data:', error);
+      console.error('❌ Failed to load faculty data:', error);
     } finally {
       setLoadingPosts(false);
     }

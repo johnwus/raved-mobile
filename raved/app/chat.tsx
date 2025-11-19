@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   View,
   Text,
@@ -10,10 +10,12 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { theme } from '../theme';
-import { Avatar } from '../components/ui/Avatar';
 import { EmptyState } from '../components/ui/EmptyState';
+import { ChatListItem } from '../components/chat/ChatListItem';
 import { chatApi } from '../services/chatApi';
 import { useAuth } from '../hooks/useAuth';
+import { socketService } from '../services/socket';
+import { usePresenceStore } from '../store/presenceStore';
 
 interface Chat {
   id: string;
@@ -39,43 +41,98 @@ export default function ChatScreen() {
   const [chats, setChats] = useState<Chat[]>([]);
   const [loading, setLoading] = useState(true);
   const _scrollViewRef = useRef<ScrollView>(null);
+  const { setUserOnline, setUserOffline } = usePresenceStore();
+
+  const transformChatData = (chat: any) => {
+    const otherParticipant = chat.participants?.find((p: any) => p.id !== user?.id) || chat.otherParticipant;
+    return {
+      id: chat.id,
+      otherParticipant: otherParticipant || {
+        id: '',
+        username: '',
+        name: 'Unknown',
+        avatarUrl: '',
+      },
+      lastMessage: chat.lastMessage ? {
+        content: chat.lastMessage.content,
+        timeAgo: chat.lastMessage.timeAgo || '',
+        createdAt: chat.lastMessage.createdAt,
+      } : null,
+      unreadCount: chat.unreadCount || 0,
+      createdAt: chat.createdAt || '',
+      lastMessageAt: chat.lastMessageAt || null,
+    };
+  };
+
+  const makeConversationUpdater = useCallback((data: any) => (c: Chat) => {
+    if (c.id !== data.conversationId) return c;
+    return {
+      ...c,
+      lastMessage: {
+        content: data.lastMessage,
+        timeAgo: data.timeAgo || '',
+        createdAt: data.lastMessageAt
+      },
+      unreadCount: data.incrementUnread ? (c.unreadCount || 0) + 1 : c.unreadCount
+    };
+  }, []);
+
+  const handleConversationUpdated = useCallback((data: any) => {
+    setChats(prev => prev.map(makeConversationUpdater(data)));
+  }, [makeConversationUpdater]);
 
   useEffect(() => {
     const fetchChats = async () => {
       try {
         const response = await chatApi.getChats();
         if (response.success && response.chats) {
-          // Transform backend format to frontend format
-          const transformedChats = response.chats.map((chat: any) => ({
-            id: chat.id,
-            otherParticipant: chat.participants?.find((p: any) => p.id !== user?.id) || chat.otherParticipant || {
-              id: '',
-              username: '',
-              name: 'Unknown',
-              avatarUrl: '',
-            },
-            lastMessage: chat.lastMessage ? {
-              content: chat.lastMessage.content,
-              timeAgo: chat.lastMessage.timeAgo || '',
-              createdAt: chat.lastMessage.createdAt,
-            } : null,
-            unreadCount: chat.unreadCount || 0,
-            createdAt: chat.createdAt || '',
-            lastMessageAt: chat.lastMessageAt || null,
-          }));
-          setChats(transformedChats);
+          setChats(response.chats.map(transformChatData));
+        } else {
+          setChats([]);
         }
       } catch (error) {
         console.error('Failed to fetch chats:', error);
+        setChats([]);
       } finally {
         setLoading(false);
       }
     };
 
-    if (user) {
-      fetchChats();
-    }
-  }, [user]);
+    if (!user) return;
+    fetchChats();
+
+    const setupSocket = async () => {
+      try {
+        const socket = await socketService.connect();
+        socket.emit('join', user.id);
+        console.log('[CHAT] Socket connected, setting up listeners');
+        
+        // Listen for initial list of online users when connecting
+        socketService.onUsersOnlineList((users: any[]) => {
+          console.log('[CHAT] Received users_online_list:', users);
+           
+          for (const u of users) {
+            console.log(`[CHAT] Setting ${u.username} (${u.userId}) as online`);
+            setUserOnline(u.userId, u.username);
+          }
+        });
+        
+        // eslint-disable-next-line sonarjs/cognitive-complexity
+        socketService.onConversationUpdated(handleConversationUpdated);
+        socketService.onUserOnline(data => {
+          console.log('[CHAT] User online event:', data);
+          setUserOnline(data.userId, data.username);
+        });
+        socketService.onUserOffline(data => {
+          console.log('[CHAT] User offline event:', data);
+          setUserOffline(data.userId);
+        });
+      } catch (error_) {
+        console.warn('Socket setup failed:', error_);
+      }
+    };
+    setupSocket();
+  }, [user, setUserOnline, setUserOffline]);
 
   const handleOpenChat = (chatId: string) => {
     router.push(`/chat/${chatId}` as any);
@@ -106,46 +163,27 @@ export default function ChatScreen() {
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
       >
-        {loading ? (
+        {loading && (
           <View style={styles.loadingContainer}>
             <Text style={styles.loadingText}>Loading chats...</Text>
           </View>
-        ) : chats.length === 0 ? (
+        )}
+
+        {!loading && chats.length === 0 && (
           <EmptyState
             icon="chatbubbles-outline"
             title="No conversations yet"
           />
-        ) : (
+        )}
+
+        {!loading && chats.length > 0 && (
           <View style={styles.chatsList}>
             {chats.map((chat) => (
-              <TouchableOpacity
+              <ChatListItem
                 key={chat.id}
-                style={styles.chatItem}
-                onPress={() => handleOpenChat(chat.id)}
-              >
-                <View style={styles.avatarContainer}>
-                  <Avatar uri={chat.otherParticipant.avatarUrl || ''} size={44} />
-                  <View style={[styles.statusDot, styles.statusDotOnline]} />
-                </View>
-                <View style={styles.chatInfo}>
-                  <View style={styles.chatHeader}>
-                    <Text style={styles.chatName} numberOfLines={1}>
-                      {chat.otherParticipant.name}
-                    </Text>
-                    <Text style={styles.chatTime}>
-                      {chat.lastMessage?.timeAgo || ''}
-                    </Text>
-                  </View>
-                  <Text style={styles.chatPreview} numberOfLines={1}>
-                    {chat.lastMessage?.content || 'No messages yet'}
-                  </Text>
-                </View>
-                {chat.unreadCount > 0 && (
-                  <View style={styles.unreadBadge}>
-                    <Text style={styles.unreadBadgeText}>{chat.unreadCount}</Text>
-                  </View>
-                )}
-              </TouchableOpacity>
+                chat={chat}
+                onPress={handleOpenChat}
+              />
             ))}
           </View>
         )}
@@ -206,78 +244,6 @@ const styles = StyleSheet.create({
   },
   chatsList: {
     gap: 0,
-  },
-  chatItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: theme.spacing[3],
-    padding: theme.spacing[4],
-    borderBottomWidth: 1,
-    borderBottomColor: '#F3F4F6',
-  },
-  avatarContainer: {
-    position: 'relative',
-  },
-  statusDot: {
-    position: 'absolute',
-    bottom: 0,
-    right: 0,
-    width: 12,
-    height: 12,
-    borderRadius: 6,
-    borderWidth: 2,
-    borderColor: '#FFFFFF',
-  },
-  statusDotOnline: {
-    backgroundColor: '#10B981',
-  },
-  statusDotOffline: {
-    backgroundColor: '#9CA3AF',
-  },
-  chatInfo: {
-    flex: 1,
-    gap: 4,
-  },
-  chatHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  },
-  chatName: {
-    fontSize: theme.typography.fontSize[14],
-    fontWeight: theme.typography.fontWeight.semibold,
-    color: '#111827',
-    flex: 1,
-  },
-  chatTime: {
-    fontSize: theme.typography.fontSize[10],
-    color: '#6B7280',
-  },
-  chatPreview: {
-    fontSize: theme.typography.fontSize[12],
-    color: '#6B7280',
-  },
-  unreadBadge: {
-    backgroundColor: theme.colors.primary,
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: theme.borderRadius.full,
-    minWidth: 20,
-    alignItems: 'center',
-  },
-  unreadBadgeText: {
-    color: 'white',
-    fontSize: theme.typography.fontSize[10],
-    fontWeight: theme.typography.fontWeight.bold,
-  },
-  emptyState: {
-    alignItems: 'center',
-    paddingVertical: theme.spacing[12],
-    gap: theme.spacing[3],
-  },
-  emptyText: {
-    fontSize: theme.typography.fontSize[14],
-    color: '#6B7280',
   },
   loadingContainer: {
     flex: 1,

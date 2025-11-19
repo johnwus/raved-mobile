@@ -31,73 +31,68 @@ export const useStoreStore = create<StoreState>()(
       isLoading: false,
       error: null,
 
+      fetchProducts: async () => {
+        try {
+          set({ isLoading: true, error: null });
+          const data = await storeApi.getStoreItems({ page: 1, limit: 50 });
+          console.log('Store items fetched:', data);
+          set({ 
+            products: data.items || data || [],
+            isLoading: false 
+          });
+        } catch (error: any) {
+          console.error('Failed to fetch products:', error);
+          set({ 
+            error: error.message || 'Failed to fetch products',
+            isLoading: false 
+          });
+        }
+      },
+
       addToCart: async (productId, quantity = 1) => {
         try {
           set({ isLoading: true, error: null });
-          await storeApi.addToCart(productId, quantity);
-          // Refresh from server to get authoritative cartItem ids/quantities
-          try {
-            const data = await storeApi.getUserCart();
-            const normalized = (data.items || []).map((ci: any) => ({
-              id: ci.id || ci.cartItemId,
-              productId: ci.product?.id || ci.productId,
-              quantity: ci.quantity,
-            }));
-            set({ cart: normalized });
-          } catch (e) {
-            // Fallback optimistic update
-            set((state) => {
-              const existingItem = state.cart.find(item => item.productId === productId);
-              if (existingItem) {
-                return {
-                  cart: state.cart.map(item =>
-                    item.productId === productId
-                      ? { ...item, quantity: item.quantity + quantity }
-                      : item
-                  ),
-                };
-              } else {
-                return {
-                  cart: [...state.cart, { productId: productId, quantity }],
-                };
-              }
-            });
-          }
+          // Call API to add item to cart
+          const response = await storeApi.addToCart(productId, quantity);
+          console.log('Add to cart response:', response);
+          
+          // Refresh cart from server to get updated state
+          const fresh = await storeApi.getUserCart();
+          const normalizedFresh = (fresh.items || []).map((ci: any) => ({
+            id: ci.id || ci.cartItemId,
+            productId: ci.item?.id || ci.product?.id || ci.productId,
+            quantity: ci.quantity,
+          }));
+          set({ cart: normalizedFresh });
+          console.log('Cart updated after adding:', normalizedFresh.length, 'items');
         } catch (error: any) {
+          console.error('Failed to add item to cart:', error);
           set({ error: error.message || 'Failed to add item to cart' });
         } finally {
           set({ isLoading: false });
         }
       },
 
-      removeFromCart: async (productId) => {
+      removeFromCart: async (productId: string) => {
         try {
           set({ isLoading: true, error: null });
-          // Ensure we have latest cart ids
-          let cartItem = get().cart.find(item => item.productId === productId);
-          if (!cartItem) {
-            const data = await storeApi.getUserCart();
-            const normalized = (data.items || []).map((ci: any) => ({
-              id: ci.id || ci.cartItemId,
-              productId: ci.product?.id || ci.productId,
-              quantity: ci.quantity,
-            }));
-            set({ cart: normalized });
-            cartItem = normalized.find(i => i.productId === productId);
-          }
-          if (cartItem && cartItem.id) {
+          // Find the cart item with this productId
+          const cartItem = get().cart.find(item => item.productId === productId);
+          if (cartItem?.id) {
             await storeApi.removeFromCart(cartItem.id);
           }
 
           // Refresh cart from server
           const fresh = await storeApi.getUserCart();
-          const normalizedFresh = (fresh.items || []).map((ci: any) => ({
-            id: ci.id || ci.cartItemId,
-            productId: ci.product?.id || ci.productId,
+          const normalizedFresh = (fresh.cartItems || []).map((ci: any) => ({
+            id: ci.cartItemId,
+            productId: ci.item?.id,
             quantity: ci.quantity,
           }));
           set({ cart: normalizedFresh });
+          console.log('Cart updated after removing:', normalizedFresh.length, 'items');
         } catch (error: any) {
+          console.error('Failed to remove item from cart:', error);
           set({ error: error.message || 'Failed to remove item from cart' });
         } finally {
           set({ isLoading: false });
@@ -107,27 +102,27 @@ export const useStoreStore = create<StoreState>()(
       updateCartQuantity: async (productId, quantity) => {
         try {
           set({ isLoading: true, error: null });
-          // Ensure we have latest cart ids
+          // Find the cart item with this productId
           let cartItem = get().cart.find(item => item.productId === productId);
           if (!cartItem) {
             const data = await storeApi.getUserCart();
-            const normalized = (data.items || []).map((ci: any) => ({
-              id: ci.id || ci.cartItemId,
-              productId: ci.product?.id || ci.productId,
+            const normalized = (data.cartItems || []).map((ci: any) => ({
+              id: ci.cartItemId,
+              productId: ci.item?.id,
               quantity: ci.quantity,
             }));
             set({ cart: normalized });
             cartItem = normalized.find(i => i.productId === productId);
           }
-          if (cartItem && cartItem.id) {
+          if (cartItem?.id) {
             await storeApi.updateCartItem(cartItem.id, quantity);
           }
 
           // Refresh cart from server
           const fresh = await storeApi.getUserCart();
-          const normalizedFresh = (fresh.items || []).map((ci: any) => ({
-            id: ci.id || ci.cartItemId,
-            productId: ci.product?.id || ci.productId,
+          const normalizedFresh = (fresh.cartItems || []).map((ci: any) => ({
+            id: ci.cartItemId,
+            productId: ci.item?.id,
             quantity: ci.quantity,
           }));
           set({ cart: normalizedFresh });
@@ -177,19 +172,6 @@ export const useStoreStore = create<StoreState>()(
           set({ cart: [] });
         } catch (error: any) {
           set({ error: error.message || 'Failed to clear cart' });
-        } finally {
-          set({ isLoading: false });
-        }
-      },
-
-      fetchProducts: async () => {
-        try {
-          set({ isLoading: true, error: null });
-          const response = await storeApi.getStoreItems();
-          set({ products: response.items });
-        } catch (error: any) {
-          console.error('Fetch products error:', error);
-          set({ error: error.response?.data?.error || error.message || 'Failed to fetch products' });
         } finally {
           set({ isLoading: false });
         }

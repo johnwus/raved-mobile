@@ -14,6 +14,7 @@ const cart_routes_1 = __importDefault(require("./cart.routes"));
 const payment_routes_1 = __importDefault(require("./payment.routes"));
 const admin_routes_1 = __importDefault(require("./admin.routes"));
 const search_routes_1 = __importDefault(require("./search.routes"));
+const ops_routes_1 = __importDefault(require("./ops.routes"));
 const events_routes_1 = __importDefault(require("./events.routes"));
 const notifications_routes_1 = __importDefault(require("./notifications.routes"));
 const device_token_routes_1 = __importDefault(require("./device-token.routes"));
@@ -28,6 +29,7 @@ const faculties_routes_1 = __importDefault(require("./faculties.routes"));
 const rankings_routes_1 = __importDefault(require("./rankings.routes"));
 const subscriptions_routes_1 = __importDefault(require("./subscriptions.routes"));
 const users_routes_1 = __importDefault(require("./users.routes"));
+const support_routes_1 = __importDefault(require("./support.routes"));
 const router = (0, express_1.Router)();
 router.use('/auth', auth_routes_1.default);
 router.use('/posts', posts_routes_1.default);
@@ -45,6 +47,7 @@ router.use('/faculties', faculties_routes_1.default);
 router.use('/rankings', rankings_routes_1.default);
 router.use('/subscriptions', subscriptions_routes_1.default);
 router.use('/users', users_routes_1.default);
+router.use('/support', support_routes_1.default);
 router.use('/', cart_routes_1.default); // Use cart routes (note: some routes are /cart, some /items/:itemId/save)
 router.use('/', payment_routes_1.default); // Use payment routes (note: some routes are /webhooks, some /subscriptions, some /payments)
 router.use('/', admin_routes_1.default); // Use admin routes (note: some routes are /admin, some /reports)
@@ -53,4 +56,5 @@ router.use('/backup', backup_routes_1.default); // Use backup routes
 router.use('/offline-sync', offline_sync_routes_1.default); // Use offline sync routes
 router.use('/rate-limits', rate_limit_routes_1.default); // Use rate limit management routes
 router.use('/moderation', moderation_routes_1.default); // Use moderation routes
+router.use('/ops', ops_routes_1.default);
 exports.default = router;

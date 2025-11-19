@@ -33,30 +33,40 @@ const parseSearchQuery = (query) => {
     return { terms, phrases, excluded };
 };
 // Build SQL WHERE clause from parsed query
-const buildSearchCondition = (parsedQuery, field) => {
+const buildSearchCondition = (parsedQuery, fields, fallbackValue) => {
+    const fieldList = Array.isArray(fields)
+        ? fields
+        : fields.split(',').map((f) => f.trim()).filter(Boolean);
     const conditions = [];
     const params = [];
     let paramIndex = 1;
-    // Add phrase matches (highest priority)
-    for (const phrase of parsedQuery.phrases) {
-        conditions.push(`${field} ILIKE $${paramIndex}`);
-        params.push(`%${phrase}%`);
+    const addConditionGroup = (value, operator) => {
+        if (fieldList.length === 0) {
+            return;
+        }
+        const comparators = fieldList.map(field => `${field} ${operator} $${paramIndex}`);
+        const joiner = operator === 'ILIKE' ? ' OR ' : ' AND ';
+        conditions.push(`(${comparators.join(joiner)})`);
+        params.push(value);
         paramIndex++;
+    };
+    // Add phrase matches (higher priority)
+    for (const phrase of parsedQuery.phrases) {
+        addConditionGroup(`%${phrase}%`, 'ILIKE');
     }
     // Add term matches
     for (const term of parsedQuery.terms) {
-        conditions.push(`${field} ILIKE $${paramIndex}`);
-        params.push(`%${term}%`);
-        paramIndex++;
+        addConditionGroup(`%${term}%`, 'ILIKE');
     }
-    // Add exclusions
+    // Add exclusions (ensure none of the fields contain the excluded term)
     for (const exclude of parsedQuery.excluded) {
-        conditions.push(`${field} NOT ILIKE $${paramIndex}`);
-        params.push(`%${exclude}%`);
-        paramIndex++;
+        addConditionGroup(`%${exclude}%`, 'NOT ILIKE');
+    }
+    if (conditions.length === 0 && fallbackValue) {
+        addConditionGroup(`%${fallbackValue}%`, 'ILIKE');
     }
     return {
-        condition: conditions.length > 0 ? `(${conditions.join(' OR ')})` : 'TRUE',
+        condition: conditions.length > 0 ? conditions.join(' AND ') : 'TRUE',
         params
     };
 };
@@ -223,7 +233,7 @@ exports.searchService = {
         };
         // Search users with ranking
         if (type === 'all' || type === 'users') {
-            const userCondition = buildSearchCondition(parsedQuery, 'username, first_name, last_name, bio, faculty');
+            const userCondition = buildSearchCondition(parsedQuery, ['username', 'first_name', 'last_name', 'bio', 'faculty'], q);
             const userQuery = `
         SELECT id, username, first_name, last_name, avatar_url, faculty, bio,
                followers_count, posts_count,
@@ -352,7 +362,7 @@ exports.searchService = {
         }
         // Search store items with filters
         if (type === 'all' || type === 'items') {
-            const itemCondition = buildSearchCondition(parsedQuery, 'name, description, category, brand');
+            const itemCondition = buildSearchCondition(parsedQuery, ['name', 'description', 'category', 'brand'], q);
             let itemQuery = `
         SELECT id, name, description, price, category, condition, size, brand,
                images, seller_id, views_count, likes_count, saves_count,
@@ -432,7 +442,7 @@ exports.searchService = {
         }
         // Search events
         if (type === 'all' || type === 'events') {
-            const eventCondition = buildSearchCondition(parsedQuery, 'title, description, location, category');
+            const eventCondition = buildSearchCondition(parsedQuery, ['title', 'description', 'location', 'category'], q);
             let eventQuery = `
         SELECT id, title, description, event_date, location, category, organizer_id,
                current_attendees, max_attendees,
@@ -502,7 +512,7 @@ exports.searchService = {
         }
         // Search faculties (simple list for now)
         if (type === 'all' || type === 'faculties') {
-            const facultyCondition = buildSearchCondition(parsedQuery, 'faculty');
+            const facultyCondition = buildSearchCondition(parsedQuery, ['faculty'], q);
             const facultyQuery = `
         SELECT DISTINCT faculty
         FROM users

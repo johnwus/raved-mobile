@@ -8,15 +8,13 @@ import { socketService } from '../services/socket';
 interface PostsState {
   posts: Post[];
   featuredPost: Post | null;
-  likedPosts: Set<string>;
-  savedPosts: Set<string>;
+  likedPostIds: string[];
+  savedPostIds: string[];
   loading: boolean;
   error: string | null;
-  // pagination
   currentPage: number;
   hasMore: boolean;
   limit: number;
-  // actions
   addPost: (post: Post) => void;
   likePost: (postId: string) => Promise<void>;
   unlikePost: (postId: string) => Promise<void>;
@@ -31,38 +29,66 @@ interface PostsState {
   initializeSocketListeners: () => void;
 }
 
+function normalizeArrays(state: any) {
+  try {
+    if (state && typeof state === 'object') {
+      if (state.likedPostIds && !Array.isArray(state.likedPostIds)) {
+        state.likedPostIds = Array.isArray(state.likedPostIds)
+          ? state.likedPostIds
+          : Object.keys(state.likedPostIds || {});
+      }
+      if (state.savedPostIds && !Array.isArray(state.savedPostIds)) {
+        state.savedPostIds = Array.isArray(state.savedPostIds)
+          ? state.savedPostIds
+          : Object.keys(state.savedPostIds || {});
+      }
+    }
+  } catch {
+    // ignore
+  }
+}
+
+function ensureUserOnPost(post: any) {
+  if (!post) return post;
+  if (post.user && typeof post.user === 'object') return post;
+
+  // Try common fallbacks that backend may provide
+  const userId = post.userId || post.authorId || (post.author && (post.author._id || post.author.id)) || null;
+  const userName = post.userName || post.authorName || post.username || (post.user && post.user.name) || 'Unknown User';
+  const avatar = (post.user && post.user.avatar) || post.avatar || (post.author && post.author.avatar) || '';
+  const faculty = (post.user && post.user.faculty) || post.faculty || '';
+
+  if (userId) {
+    post.user = { id: userId, name: userName, avatar, faculty };
+  } else if (!post.user) {
+    // best-effort placeholder so UI doesn't render 'Unknown' unexpectedly
+    post.user = { id: `unknown-${Math.random().toString(36).slice(2, 8)}`, name: userName, avatar, faculty };
+  }
+  return post;
+}
+
 export const usePostsStore = create<PostsState>()(
   persist(
     (set, get) => ({
       posts: [],
       featuredPost: null,
-      likedPosts: new Set<string>(),
-      savedPosts: new Set<string>(),
+      likedPostIds: [],
+      savedPostIds: [],
       loading: false,
       error: null,
       currentPage: 0,
       hasMore: true,
       limit: 10,
 
-      addPost: (post) => {
-        set((state) => ({
-          posts: [post, ...state.posts],
-        }));
-      },
+      addPost: (post) => set((state) => ({ posts: [post, ...state.posts] })),
 
       likePost: async (postId) => {
         try {
-          const response = await postsApi.likePost(postId);
+          await postsApi.likePost(postId);
           set((state) => {
-            const newLiked = new Set(state.likedPosts);
-            newLiked.add(postId);
-            // Update post likes count
-            const updatedPosts = state.posts.map(post =>
-              post.id === postId
-                ? { ...post, likes: post.likes + 1, liked: true }
-                : post
-            );
-            return { likedPosts: newLiked, posts: updatedPosts };
+            const newLiked = state.likedPostIds.includes(postId) ? state.likedPostIds : [...state.likedPostIds, postId];
+            const updatedPosts = state.posts.map((post) => (post.id === postId ? { ...post, likes: (post.likes || 0) + 1, liked: true } : post));
+            return { likedPostIds: newLiked, posts: updatedPosts };
           });
         } catch (error) {
           console.error('Failed to like post:', error);
@@ -72,17 +98,11 @@ export const usePostsStore = create<PostsState>()(
 
       unlikePost: async (postId) => {
         try {
-          const response = await postsApi.likePost(postId);
+          await postsApi.likePost(postId);
           set((state) => {
-            const newLiked = new Set(state.likedPosts);
-            newLiked.delete(postId);
-            // Update post likes count
-            const updatedPosts = state.posts.map(post =>
-              post.id === postId
-                ? { ...post, likes: post.likes - 1, liked: false }
-                : post
-            );
-            return { likedPosts: newLiked, posts: updatedPosts };
+            const newLiked = state.likedPostIds.filter((id) => id !== postId);
+            const updatedPosts = state.posts.map((post) => (post.id === postId ? { ...post, likes: Math.max(0, (post.likes || 1) - 1), liked: false } : post));
+            return { likedPostIds: newLiked, posts: updatedPosts };
           });
         } catch (error) {
           console.error('Failed to unlike post:', error);
@@ -90,69 +110,34 @@ export const usePostsStore = create<PostsState>()(
         }
       },
 
-      savePost: async (postId) => {
+      savePost: (postId) => {
         try {
-          await postsApi.savePost(postId);
-          set((state) => {
-            const newSaved = new Set(state.savedPosts);
-            newSaved.add(postId);
-            return {
-              savedPosts: newSaved,
-              posts: state.posts.map(p => p.id === postId ? { ...p, saved: true } : p)
-            };
+          set((state) => ({ savedPostIds: state.savedPostIds.includes(postId) ? state.savedPostIds : [...state.savedPostIds, postId], posts: state.posts.map((p) => (p.id === postId ? { ...p, saved: true } : p)) }));
+          postsApi.savePost(postId).catch((error) => {
+            console.warn('Save post failed, queueing for offline sync:', error);
+            import('../services/syncManager').then(({ default: syncManager }) => {
+              syncManager.queueRequest('POST', `/posts/${postId}/save`).catch(() => {});
+            }).catch(() => {});
           });
         } catch (error) {
-          console.warn('Save post failed, queueing for offline sync:', error);
-          // Optimistic update + enqueue
-          set((state) => ({
-            savedPosts: new Set([...state.savedPosts, postId]),
-            posts: state.posts.map(p => p.id === postId ? { ...p, saved: true } : p)
-          }));
-          try {
-            const { default: syncManager } = await import('../services/syncManager');
-            await syncManager.queueRequest('POST', `/posts/${postId}/save`);
-          } catch (e) {
-            console.error('Failed to queue save request:', e);
-          }
+          console.error('Save post error:', error);
         }
       },
 
-      unsavePost: async (postId) => {
+      unsavePost: (postId) => {
         try {
-          await postsApi.unsavePost(postId);
-          set((state) => {
-            const newSaved = new Set(state.savedPosts);
-            newSaved.delete(postId);
-            return {
-              savedPosts: newSaved,
-              posts: state.posts.map(p => p.id === postId ? { ...p, saved: false } : p)
-            };
+          set((state) => ({ savedPostIds: state.savedPostIds.filter((id) => id !== postId), posts: state.posts.map((p) => (p.id === postId ? { ...p, saved: false } : p)) }));
+          postsApi.unsavePost(postId).catch((error) => {
+            console.warn('Unsave post failed, queueing for offline sync:', error);
           });
         } catch (error) {
-          console.warn('Unsave post failed, queueing for offline sync:', error);
-          // Optimistic update + enqueue
-          set((state) => {
-            const newSaved = new Set(state.savedPosts);
-            newSaved.delete(postId);
-            return {
-              savedPosts: newSaved,
-              posts: state.posts.map(p => p.id === postId ? { ...p, saved: false } : p)
-            };
-          });
-          try {
-            const { default: syncManager } = await import('../services/syncManager');
-            await syncManager.queueRequest('DELETE', `/posts/${postId}/save`);
-          } catch (e) {
-            console.error('Failed to queue unsave request:', e);
-          }
+          console.error('Unsave post error:', error);
         }
       },
 
       setFeaturedPost: (postId) => {
-        const post = get().posts.find(p => p.id === postId);
-        if (post) {
-          set({ featuredPost: post });
-        }
+        const post = get().posts.find((p) => p.id === postId);
+        if (post) set({ featuredPost: post });
       },
 
       fetchFeed: async (page = 1) => {
@@ -160,20 +145,24 @@ export const usePostsStore = create<PostsState>()(
         try {
           const { limit } = get();
           const response = await postsApi.getFeed(page, limit);
-          const posts = (response.posts || []).map((post: any) => ({
-            ...post,
-            liked: get().likedPosts.has(post.id),
-            saved: get().savedPosts.has(post.id),
-          }));
-          const hasMore = !!response.pagination?.hasMore && posts.length >= limit;
-          set({
-            posts,
-            featuredPost: posts[0] || null,
-            loading: false,
-            currentPage: page,
-            hasMore,
-          });
+          console.log('📥 Feed API Response:', JSON.stringify(response, null, 2));
+
+          // Normalize posts: ensure user object exists, and filter out items without an id
+          const rawPosts = response.posts || [];
+          console.log('📝 Raw posts count:', rawPosts.length);
+
+          const mapped = rawPosts
+            .map((post: any) => ({ ...post, liked: get().likedPostIds.includes(post.id), saved: get().savedPostIds.includes(post.id) }))
+            .map((p: any) => ensureUserOnPost(p))
+            .filter((p: any) => p && p.id);
+
+          console.log('✅ Mapped posts count:', mapped.length);
+          console.log('📋 First post sample:', mapped[0] ? JSON.stringify(mapped[0], null, 2) : 'No posts');
+
+          const hasMore = !!response.pagination?.hasMore && mapped.length >= limit;
+          set({ posts: mapped, featuredPost: mapped.find((p: any) => p && p.user) || mapped[0] || null, loading: false, currentPage: page, hasMore });
         } catch (error: any) {
+          console.error('❌ Feed fetch error:', error);
           set({ error: error.message || 'Failed to fetch feed', loading: false });
         }
       },
@@ -185,16 +174,17 @@ export const usePostsStore = create<PostsState>()(
           const nextPage = get().currentPage + 1;
           const { limit } = get();
           const response = await postsApi.getFeed(nextPage, limit);
-          const newPosts = (response.posts || []).map((post: any) => ({
-            ...post,
-            liked: get().likedPosts.has(post.id),
-            saved: get().savedPosts.has(post.id),
-          }));
+          const rawNew = response.posts || [];
+          const normalizedNew = rawNew
+            .map((post: any) => ({ ...post, liked: get().likedPostIds.includes(post.id), saved: get().savedPostIds.includes(post.id) }))
+            .map((p: any) => ensureUserOnPost(p))
+            .filter((p: any) => p && p.id);
+
           const merged = [...get().posts];
-          newPosts.forEach((p: any) => {
-            if (!merged.find(mp => mp.id === p.id)) merged.push(p);
+          normalizedNew.forEach((p: any) => {
+            if (!merged.find((mp) => mp.id === p.id)) merged.push(p);
           });
-          const hasMore = !!response.pagination?.hasMore && newPosts.length >= limit;
+          const hasMore = !!response.pagination?.hasMore && normalizedNew.length >= limit;
           set({ posts: merged, currentPage: nextPage, hasMore, loading: false });
         } catch (e: any) {
           console.error('Fetch more failed', e);
@@ -205,11 +195,7 @@ export const usePostsStore = create<PostsState>()(
       createPost: async (postData) => {
         try {
           const response = await postsApi.createPost(postData);
-          const newPost = {
-            ...response.post,
-            liked: false,
-            saved: false,
-          };
+          const newPost = { ...response.post, liked: false, saved: false } as Post;
           get().addPost(newPost);
           return newPost;
         } catch (error: any) {
@@ -221,73 +207,66 @@ export const usePostsStore = create<PostsState>()(
       setLoading: (loading) => set({ loading }),
       setError: (error) => set({ error }),
 
-      // Initialize socket listeners for real-time updates
       initializeSocketListeners: () => {
         socketService.onPostLike((data) => {
-          set((state) => ({
-            posts: state.posts.map(post =>
-              post.id === data.postId
-                ? {
-                    ...post,
-                    likes: data.liked ? post.likes + 1 : post.likes - 1,
-                    liked: data.liked,
-                    isLiked: data.liked
-                  }
-                : post
-            )
-          }));
+          set((state) => ({ posts: state.posts.map((post) => (post.id === data.postId ? { ...post, likes: data.liked ? post.likes + 1 : post.likes - 1, liked: data.liked, isLiked: data.liked } : post)) }));
         });
 
         socketService.onNewPost((data) => {
-          const newPost = {
-            ...data.post,
-            liked: false,
-            saved: false,
-          };
-          set((state) => ({
-            posts: [newPost, ...state.posts]
-          }));
+          const newPost = { ...data.post, liked: false, saved: false } as Post;
+          set((state) => ({ posts: [newPost, ...state.posts] }));
         });
 
         socketService.onPostComment((data) => {
-          set((state) => ({
-            posts: state.posts.map(post =>
-              post.id === data.postId
-                ? { ...post, comments: post.comments + 1 }
-                : post
-            )
-          }));
+          set((state) => ({ posts: state.posts.map((post) => (post.id === data.postId ? { ...post, comments: post.comments + 1 } : post)) }));
         });
       },
     }),
     {
       name: 'raved-posts',
-      storage: {
-        getItem: async (name) => {
+      // cast storage to any to satisfy zustand's StorageValue typing differences
+      storage: ({
+        getItem: async (name: string): Promise<string | null> => {
           try {
-            const value = await Storage.get(name, null);
-            return value;
+            const raw = await Storage.get(name, null as any);
+            if (!raw) return null;
+            const wrapper = typeof raw === 'object' && raw !== null && 'state' in raw ? raw : { state: raw };
+            const state = wrapper.state || {};
+            normalizeArrays(state);
+            const out = { ...wrapper, state };
+            return JSON.stringify(out);
           } catch (error) {
             console.error('Error getting item from storage:', error);
             return null;
           }
         },
-        setItem: async (name, value) => {
+        setItem: async (name: string, value: any): Promise<void> => {
           try {
-            await Storage.set(name, value);
+            // value may be a string (from zustand) or already an object (some runtimes).
+            let parsed: any = value;
+            if (typeof value === 'string') {
+              try {
+                parsed = JSON.parse(value);
+              } catch {
+                // if parsing fails, keep the original string
+                parsed = value;
+              }
+            }
+            await Storage.set(name, parsed as any);
           } catch (error) {
             console.error('Error setting item to storage:', error);
           }
         },
-        removeItem: async (name) => {
+        removeItem: async (name: string): Promise<void> => {
           try {
             await Storage.remove(name);
           } catch (error) {
             console.error('Error removing item from storage:', error);
           }
         },
-      },
+      } as unknown as any),
     }
   )
 );
 
+export default usePostsStore;  

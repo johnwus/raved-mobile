@@ -31,15 +31,22 @@ export const commentOnPost = async (postId: string, userId: string, text: string
             const user = userResult.rows[0];
 
             const actorName = `${user.first_name} ${user.last_name}`;
+            const postTitle = post.caption?.substring(0, 100) || 'your post';
 
-            // Create notification using the controller
+            // Create notification using the controller with enriched data
             await notificationsController.createNotification(
                 post.userId,
                 'comment',
                 'New Comment',
                 `${actorName} commented on your post`,
                 userId,
-                { postId, commentId: comment._id, type: 'post' }
+                { 
+                    postId, 
+                    commentId: comment._id, 
+                    type: 'post',
+                    postTitle,
+                    commentText: text.substring(0, 50)
+                }
             );
 
             if (userSubscription === 'premium') {

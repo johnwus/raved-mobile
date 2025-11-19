@@ -35,13 +35,19 @@ export interface CommentData {
 export const postsApi = {
   // Feed operations
   getFeed: async (page = 1, limit = 20) => {
+    console.log(`🌐 Fetching feed: page=${page}, limit=${limit}`);
     const response = await api.get(`/posts/feed?page=${page}&limit=${limit}`);
+    console.log('🌐 Feed API raw response:', JSON.stringify(response.data, null, 2));
+    console.log('🌐 Feed posts count:', response.data?.posts?.length || 0);
     return response.data;
   },
 
   // Get posts by faculty
   getFacultyPosts: async (facultyId: string, page = 1, limit = 20) => {
+    console.log(`🌐 Fetching faculty posts: facultyId=${facultyId}, page=${page}, limit=${limit}`);
     const response = await api.get(`/posts/faculty/${facultyId}?page=${page}&limit=${limit}`);
+    console.log('🌐 Faculty posts API raw response:', JSON.stringify(response.data, null, 2));
+    console.log('🌐 Faculty posts count:', response.data?.posts?.length || 0);
     return response.data;
   },
 
@@ -73,6 +79,11 @@ export const postsApi = {
     return response.data;
   },
 
+  likeComment: async (postId: string, commentId: string) => {
+    const response = await api.post(`/posts/${postId}/comments/${commentId}/like`);
+    return response.data;
+  },
+
   // Additional operations for full backend compatibility
   updatePost: async (postId: string, updateData: Partial<CreatePostData>) => {
     const response = await api.put(`/posts/${postId}`, updateData);
@@ -89,6 +100,7 @@ export const postsApi = {
     const response = await api.post(`/posts/${postId}/share`);
     return response.data;
   },
+
 
   // Save/Unsave (bookmarks)
   savePost: async (postId: string) => {

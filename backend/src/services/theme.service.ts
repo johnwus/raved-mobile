@@ -1,4 +1,5 @@
 import { pgPool } from '../config/database';
+import { redis } from '../config/database';
 import { CONFIG } from '../config';
 
 export const themeService = {
@@ -76,14 +77,37 @@ export const themeService = {
   },
 
   getUserTheme: async (userId: string) => {
+    const cacheKey = `user_theme:${userId}`;
+
+    // Try to get from cache first
+    try {
+      const cached = await redis.get(cacheKey);
+      if (cached) {
+        return JSON.parse(cached);
+      }
+    } catch (cacheError) {
+      console.warn('Redis cache error:', cacheError);
+    }
+
+    // Get from database
     const result = await pgPool.query(
       'SELECT theme_preference, dark_mode_preference FROM users WHERE id = $1',
       [userId]
     );
-    return {
+
+    const themeData = {
       themeId: result.rows[0]?.theme_preference || 'default',
       darkMode: result.rows[0]?.dark_mode_preference || false
     };
+
+    // Cache for 1 hour
+    try {
+      await redis.setex(cacheKey, 3600, JSON.stringify(themeData));
+    } catch (cacheError) {
+      console.warn('Redis cache set error:', cacheError);
+    }
+
+    return themeData;
   },
 
   setUserTheme: async (userId: string, themeId: string, isPremiumUser: boolean) => {
@@ -104,15 +128,40 @@ export const themeService = {
       'UPDATE users SET theme_preference = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2',
       [themeId, userId]
     );
+
+    // Invalidate cache
+    try {
+      await redis.del(`user_theme:${userId}`);
+    } catch (cacheError) {
+      console.warn('Redis cache delete error:', cacheError);
+    }
+
     return themeId;
   },
 
-  setUserDarkMode: async (userId: string, darkMode: boolean) => {
+  setUserDarkMode: async (userId: string) => {
+    // Get current dark mode preference
+    const result = await pgPool.query(
+      'SELECT dark_mode_preference FROM users WHERE id = $1',
+      [userId]
+    );
+
+    const currentDarkMode = result.rows[0]?.dark_mode_preference || false;
+    const newDarkMode = !currentDarkMode;
+
     await pgPool.query(
       'UPDATE users SET dark_mode_preference = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2',
-      [darkMode, userId]
+      [newDarkMode, userId]
     );
-    return darkMode;
+
+    // Invalidate cache
+    try {
+      await redis.del(`user_theme:${userId}`);
+    } catch (cacheError) {
+      console.warn('Redis cache delete error:', cacheError);
+    }
+
+    return newDarkMode;
   },
 
   getSystemTheme: async () => {

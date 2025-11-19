@@ -97,10 +97,27 @@ export function validateFileSize(maxSize: number) {
 
 // SQL injection prevention middleware
 export function preventSQLInjection(req: Request, res: Response, next: NextFunction) {
+  // Only check for ACTUAL SQL injection patterns, not just apostrophes
+  // These patterns look for SQL keywords followed by suspicious operators
   const suspiciousPatterns = [
-    /(\bUNION\b|\bSELECT\b|\bINSERT\b|\bUPDATE\b|\bDELETE\b|\bDROP\b|\bCREATE\b|\bALTER\b)/i,
-    /('|(\\x27)|(\\x2D\\x2D)|(\\#)|(\\x23)|(\-\-)|(\;)|(\\x3B))/i,
-    /(<script|javascript:|vbscript:|onload=|onerror=)/i
+    // SQL injection attempts with UNION SELECT
+    /\bUNION\s+SELECT\b/i,
+    /\bUNION\s+ALL\s+SELECT\b/i,
+    
+    // SQL injection with comment operators followed by payload
+    /['"`]\s*(or|and|union|select|insert|update|delete|drop|create|alter)\s+/i,
+    
+    // Stacked queries (semicolon followed by SQL keyword)
+    /;\s*(select|insert|update|delete|drop|create|alter)\b/i,
+    
+    // xp_cmdshell and sp_ procedures
+    /\bxp_\w+|sp_\w+/i,
+    
+    // Hex encoding attacks
+    /0x[0-9a-f]+/i,
+    
+    // Comment operators in suspicious context (-- or # followed by SQL)
+    /(--|#)\s*(union|select|insert|update|delete|drop|create|alter)\b/i,
   ];
 
   const checkValue = (value: any): boolean => {
@@ -117,6 +134,7 @@ export function preventSQLInjection(req: Request, res: Response, next: NextFunct
   const locations = [req.query, req.body, req.params];
   for (const location of locations) {
     if (checkValue(location)) {
+      console.warn('🚨 Suspicious SQL injection pattern detected:', location);
       return res.status(400).json({
         success: false,
         error: 'Invalid input detected'
@@ -136,7 +154,8 @@ export function preventXSS(req: Request, res: Response, next: NextFunction) {
     /onload=/gi,
     /onerror=/gi,
     /onclick=/gi,
-    /onmouseover=/gi
+    /onmouseover=/gi,
+    /eval\s*\(/gi,
   ];
 
   const sanitizeValue = (value: any): any => {

@@ -28,6 +28,10 @@ router.get('/settings', usersController.getUserSettings);
 // Update user settings (must be before /:userId route)
 router.put('/settings', usersController.updateUserSettings);
 
+// Notification preferences (alias for settings)
+router.get('/notification-preferences', usersController.getNotificationPreferences);
+router.put('/notification-preferences', usersController.updateNotificationPreferences);
+
 // Get user by ID profile
 router.get('/:userId', usersController.getProfile);
 

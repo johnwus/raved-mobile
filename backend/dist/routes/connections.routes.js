@@ -2,17 +2,18 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 const express_1 = require("express");
 const auth_middleware_1 = require("../middleware/auth.middleware");
+const rate_limit_middleware_1 = require("../middleware/rate-limit.middleware");
 const connection_controller_1 = require("../controllers/connection.controller");
 const connections_controller_1 = require("../controllers/connections.controller");
 const router = (0, express_1.Router)();
 // Send follow request
-router.post('/follow/:userId', auth_middleware_1.authenticate, connection_controller_1.connectionController.sendFollowRequest);
+router.post('/follow/:userId', auth_middleware_1.authenticate, rate_limit_middleware_1.interactionRateLimit, connection_controller_1.connectionController.sendFollowRequest);
 // Get pending follow requests
 router.get('/requests', auth_middleware_1.authenticate, connection_controller_1.connectionController.getPendingFollowRequests);
 // Approve follow request
-router.post('/requests/:requestId/approve', auth_middleware_1.authenticate, connection_controller_1.connectionController.approveFollowRequest);
+router.post('/requests/:requestId/approve', auth_middleware_1.authenticate, rate_limit_middleware_1.interactionRateLimit, connection_controller_1.connectionController.approveFollowRequest);
 // Reject follow request
-router.post('/requests/:requestId/reject', auth_middleware_1.authenticate, connection_controller_1.connectionController.rejectFollowRequest);
+router.post('/requests/:requestId/reject', auth_middleware_1.authenticate, rate_limit_middleware_1.interactionRateLimit, connection_controller_1.connectionController.rejectFollowRequest);
 // Block user
 router.post('/block/:userId', auth_middleware_1.authenticate, connection_controller_1.connectionController.blockUser);
 // Unblock user

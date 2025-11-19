@@ -72,7 +72,16 @@ const getStories = async (req, res) => {
                 storyGroups[story.userId] = [];
             }
             storyGroups[story.userId].push({
-                ...story.toObject(),
+                id: story._id.toString(),
+                userId: story.userId,
+                type: story.type,
+                content: story.content,
+                text: story.text,
+                thumbnail: story.thumbnail,
+                allowReplies: story.allowReplies,
+                addToHighlights: story.addToHighlights,
+                expiresAt: story.expiresAt,
+                createdAt: story.createdAt,
                 viewed: viewedStories.has(story._id.toString())
             });
         });

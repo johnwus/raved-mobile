@@ -40,6 +40,8 @@ const StorySchema = new Schema<IStory>({
   createdAt: { type: Date, default: Date.now }
 });
 
+// TTL index to auto-expire stories at expiresAt
+StorySchema.index({ expiresAt: 1 }, { expireAfterSeconds: 0 });
 StorySchema.index({ userId: 1, expiresAt: -1 });
 
 export const Story = model<IStory>('Story', StorySchema);

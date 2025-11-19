@@ -33,7 +33,7 @@ var __importStar = (this && this.__importStar) || (function () {
     };
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.updateUserLanguagePreferences = exports.refresh = exports.verifySMSTwoFactorCode = exports.sendSMSTwoFactorCode = exports.disableSMSTwoFactor = exports.enableSMSTwoFactor = exports.resetPasswordWithSMS = exports.requestSMSPasswordReset = exports.verifySMSCode = exports.sendSMSVerification = exports.resetPassword = exports.requestPasswordReset = exports.verifyEmail = exports.sendEmailVerification = exports.login = void 0;
+exports.updateUserLanguagePreferences = exports.refresh = exports.verifySMSTwoFactorCode = exports.sendSMSTwoFactorCode = exports.disableSMSTwoFactor = exports.enableSMSTwoFactor = exports.resetPasswordWithSMS = exports.requestSMSPasswordReset = exports.verifySMSCode = exports.sendSMSVerification = exports.resetPassword = exports.requestPasswordReset = exports.verifyEmail = exports.sendEmailVerification = exports.login = exports.verifyRegistrationSMSCode = exports.sendRegistrationSMSCode = exports.verifyRegistrationEmailCode = exports.sendRegistrationEmailCode = exports.checkUsernameAvailability = exports.registerUser = void 0;
 const database_1 = require("../config/database");
 const auth_utils_1 = require("../utils/auth.utils");
 const utils_1 = require("../utils");
@@ -42,6 +42,134 @@ const jwt = __importStar(require("jsonwebtoken"));
 const email_service_1 = require("../services/email.service");
 const sms_service_1 = require("../services/sms.service");
 const crypto = __importStar(require("crypto"));
+const registerUser = async (req, res) => {
+    try {
+        const { email, phone, password, firstName, lastName, username, faculty } = req.body;
+        if (!email || !password || !firstName || !lastName || !username) {
+            return res.status(400).json({ error: 'Missing required fields' });
+        }
+        // Check duplicates
+        const dup = await database_1.pgPool.query('SELECT id FROM users WHERE email = $1 OR username = $2', [email.toLowerCase(), username]);
+        if (dup.rows.length > 0) {
+            return res.status(409).json({ error: 'Email or username already in use' });
+        }
+        const password_hash = await (0, auth_utils_1.hashPassword)(password);
+        const result = await database_1.pgPool.query(`
+            INSERT INTO users (
+              email, phone, password_hash, first_name, last_name, username,
+              email_verified, phone_verified, is_private, show_activity, read_receipts,
+              allow_downloads, allow_story_sharing, subscription_tier, followers_count, following_count, posts_count,
+              created_at, updated_at, faculty
+            ) VALUES (
+              $1, $2, $3, $4, $5, $6,
+              false, false, false, true, true,
+              false, true, 'free', 0, 0, 0,
+              CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, $7
+            ) RETURNING id, username, email, first_name, last_name;
+        `, [email.toLowerCase(), phone || null, password_hash, firstName, lastName, username, faculty || null]);
+        const newUser = result.rows[0];
+        const token = (0, auth_utils_1.generateToken)({ userId: newUser.id, username: newUser.username });
+        const refreshToken = (0, auth_utils_1.generateRefreshToken)({ userId: newUser.id });
+        res.json({
+            success: true,
+            message: 'Registration successful',
+            user: {
+                id: newUser.id,
+                username: newUser.username,
+                email: newUser.email,
+                firstName: newUser.first_name,
+                lastName: newUser.last_name,
+            },
+            token,
+            refreshToken,
+        });
+    }
+    catch (error) {
+        console.error('Register Error:', error);
+        res.status(500).json({ error: 'Failed to register' });
+    }
+};
+exports.registerUser = registerUser;
+const checkUsernameAvailability = async (req, res) => {
+    try {
+        const { username } = req.query;
+        if (!username)
+            return res.status(400).json({ error: 'username required' });
+        const result = await database_1.pgPool.query('SELECT 1 FROM users WHERE username = $1', [username]);
+        return res.json({ available: result.rows.length === 0 });
+    }
+    catch (e) {
+        console.error('Check username error:', e);
+        return res.status(500).json({ error: 'Failed to check username' });
+    }
+};
+exports.checkUsernameAvailability = checkUsernameAvailability;
+const sendRegistrationEmailCode = async (req, res) => {
+    try {
+        const { email } = req.body;
+        if (!email)
+            return res.status(400).json({ error: 'email required' });
+        const code = (0, utils_1.generateVerificationCode)();
+        await database_1.redis.setex(`reg_email:${email.toLowerCase()}`, 600, code);
+        await email_service_1.EmailService.sendVerificationEmail(email, 'User', code);
+        return res.json({ success: true });
+    }
+    catch (e) {
+        console.error('Send reg email code error:', e);
+        return res.status(500).json({ error: 'Failed to send code' });
+    }
+};
+exports.sendRegistrationEmailCode = sendRegistrationEmailCode;
+const verifyRegistrationEmailCode = async (req, res) => {
+    try {
+        const { email, code } = req.body;
+        if (!email || !code)
+            return res.status(400).json({ error: 'email and code required' });
+        const stored = await database_1.redis.get(`reg_email:${email.toLowerCase()}`);
+        if (!stored || stored !== code)
+            return res.status(400).json({ error: 'Invalid or expired code' });
+        await database_1.redis.del(`reg_email:${email.toLowerCase()}`);
+        return res.json({ success: true });
+    }
+    catch (e) {
+        console.error('Verify reg email error:', e);
+        return res.status(500).json({ error: 'Failed to verify code' });
+    }
+};
+exports.verifyRegistrationEmailCode = verifyRegistrationEmailCode;
+const sendRegistrationSMSCode = async (req, res) => {
+    try {
+        const { phone } = req.body;
+        if (!phone)
+            return res.status(400).json({ error: 'phone required' });
+        const code = (0, utils_1.generateVerificationCode)();
+        await database_1.redis.setex(`reg_phone:${phone}`, 600, code);
+        await sms_service_1.smsService.sendVerificationCode(phone, code);
+        return res.json({ success: true });
+    }
+    catch (e) {
+        console.error('Send reg sms code error:', e);
+        return res.status(500).json({ error: 'Failed to send code' });
+    }
+};
+exports.sendRegistrationSMSCode = sendRegistrationSMSCode;
+const verifyRegistrationSMSCode = async (req, res) => {
+    try {
+        const { phone, code } = req.body;
+        if (!phone || !code)
+            return res.status(400).json({ error: 'phone and code required' });
+        const stored = await database_1.redis.get(`reg_phone:${phone}`);
+        if (!stored || stored !== code)
+            return res.status(400).json({ error: 'Invalid or expired code' });
+        await database_1.redis.del(`reg_phone:${phone}`);
+        return res.json({ success: true });
+    }
+    catch (e) {
+        console.error('Verify reg sms error:', e);
+        return res.status(500).json({ error: 'Failed to verify code' });
+    }
+};
+exports.verifyRegistrationSMSCode = verifyRegistrationSMSCode;
 const login = async (req, res) => {
     try {
         const { identifier, password } = req.body;

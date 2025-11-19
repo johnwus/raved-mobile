@@ -22,7 +22,7 @@ import { SkeletonLoader } from '../components/ui/SkeletonLoader';
 
 interface LocalNotification {
   id: string;
-  type: 'like' | 'comment' | 'follow' | 'mention' | 'sale' | 'message' | 'event';
+  type: 'like' | 'comment' | 'follow' | 'mention' | 'sale' | 'message' | 'event' | 'post_comment' | 'comment_reply' | 'content_removed' | 'comment_removed';
   user?: {
     id: string;
     name: string;
@@ -34,6 +34,7 @@ interface LocalNotification {
   postId?: string;
   itemId?: string;
   eventId?: string;
+  commentId?: string;
 }
 
 const mockNotifications: LocalNotification[] = [
@@ -123,6 +124,7 @@ export default function NotificationsScreen() {
   const [_unreadCount, _setUnreadCount] = useState(0);
   const [presentedNotifications, setPresentedNotifications] = useState<Notifications.Notification[]>([]);
   const [scheduledNotifications, setScheduledNotifications] = useState<Notifications.NotificationRequest[]>([]);
+  const [processingNotifications, setProcessingNotifications] = useState<Set<string>>(new Set());
 
   const loadNotifications = React.useCallback(async () => {
     try {
@@ -139,6 +141,7 @@ export default function NotificationsScreen() {
         postId: notif.postId,
         itemId: notif.itemId,
         eventId: notif.eventId,
+        commentId: notif.commentId,
       }));
       
       setNotifications(formattedNotifications);
@@ -215,25 +218,37 @@ export default function NotificationsScreen() {
     return date.toLocaleDateString();
   };
 
-  const handleMarkAsRead = async (notificationId: string) => {
+  const handleDeleteNotification = async (notificationId: string) => {
+    // Prevent multiple simultaneous calls for the same notification
+    if (processingNotifications.has(notificationId)) {
+      return;
+    }
+
+    setProcessingNotifications(prev => new Set(prev).add(notificationId));
+
     try {
-      await notificationsApi.markAsRead(notificationId);
-      setNotifications(prev =>
-        prev.map(n => (n.id === notificationId ? { ...n, read: true } : n))
-      );
+      await notificationsApi.deleteNotification(notificationId);
+      // Remove notification from UI immediately
+      setNotifications(prev => prev.filter(n => n.id !== notificationId));
       _setUnreadCount(prev => Math.max(0, prev - 1));
     } catch (error) {
-      console.error('Error marking notification as read:', error);
+      console.error('Error deleting notification:', error);
+    } finally {
+      setProcessingNotifications(prev => {
+        const newSet = new Set(prev);
+        newSet.delete(notificationId);
+        return newSet;
+      });
     }
   };
 
-  const handleMarkAllAsRead = async () => {
+  const handleDeleteAllNotifications = async () => {
     try {
-      await notificationsApi.markAllAsRead();
-      setNotifications(prev => prev.map(n => ({ ...n, read: true })));
+      await notificationsApi.deleteAllNotifications();
+      setNotifications([]);
       _setUnreadCount(0);
     } catch (error) {
-      console.error('Error marking all as read:', error);
+      console.error('Error deleting all notifications:', error);
     }
   };
 
@@ -283,10 +298,21 @@ export default function NotificationsScreen() {
 
         <TouchableOpacity
           style={styles.actionButton}
-          onPress={handleMarkAllAsRead}
+          onPress={async () => {
+            // Clear both app notifications and expo notifications
+            await handleDeleteAllNotifications();
+
+            // Clear expo presented notifications
+            try {
+              await NotificationService.dismissAllNotifications();
+              console.log('Cleared expo presented notifications');
+            } catch (error) {
+              console.error('Error clearing expo notifications:', error);
+            }
+          }}
         >
-          <Ionicons name="checkmark-circle" size={20} color={theme.colors.primary} />
-          <Text style={styles.actionText}>Mark All Read</Text>
+          <Ionicons name="trash" size={20} color={theme.colors.primary} />
+          <Text style={styles.actionText}>Clear All</Text>
         </TouchableOpacity>
       </View>
 
@@ -361,14 +387,33 @@ export default function NotificationsScreen() {
                     styles.notificationCard,
                     !item.read && styles.notificationCardUnread,
                   ]}
-                  onPress={() => {
-                    handleMarkAsRead(item.id);
-                    if (item.postId) {
-                      router.push(`/post/${item.postId}` as any);
-                    } else if (item.itemId) {
-                      router.push(`/product/${item.itemId}` as any);
-                    } else if (item.eventId) {
-                      router.push(`/event/${item.eventId}` as any);
+                  disabled={processingNotifications.has(item.id)}
+                  onPress={async () => {
+                    // Prevent multiple clicks
+                    if (processingNotifications.has(item.id)) {
+                      return;
+                    }
+
+                    try {
+                      // Delete notification when user interacts with it
+                      await handleDeleteNotification(item.id);
+
+                      // Navigate based on notification type and linked resource
+                      if (item.postId) {
+                        router.push(`/post/${item.postId}` as any);
+                      } else if (item.commentId && item.postId) {
+                        // For comments, navigate to parent post with comment ID for highlighting
+                        router.push(`/post/${item.postId}?commentId=${item.commentId}` as any);
+                      } else if (item.itemId) {
+                        router.push(`/product/${item.itemId}` as any);
+                      } else if (item.eventId) {
+                        router.push(`/event/${item.eventId}` as any);
+                      }
+
+                      // Remove aggressive cleanup that causes too many API calls
+                      // The cleanup will happen naturally when the user leaves the screen
+                    } catch (error) {
+                      console.error('Error handling notification click:', error);
                     }
                   }}
                 >

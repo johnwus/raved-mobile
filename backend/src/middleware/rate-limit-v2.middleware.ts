@@ -13,7 +13,7 @@ interface RateLimitOptions {
 export const createRateLimitMiddleware = (options: RateLimitOptions = {}) => {
   return async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     try {
-      // Determine the key for rate limiting
+      // Determine the keys for rate limiting
       const key = options.customKey
         ? options.customKey(req)
         : req.user?.id || req.ip || 'anonymous';

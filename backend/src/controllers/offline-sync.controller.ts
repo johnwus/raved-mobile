@@ -1,5 +1,6 @@
 import { Request, Response } from 'express';
 import { validationResult } from 'express-validator';
+import { pgPool } from '../config/database';
 import OfflineQueueService from '../services/offline-queue.service';
 import SyncConflictService, { ConflictResolution } from '../services/sync-conflict.service';
 import OfflineStatusService, { DeviceStatusUpdate } from '../services/offline-status.service';
@@ -192,8 +193,8 @@ export const getSyncConflicts = async (req: Request, res: Response) => {
         const conflicts = await SyncConflictService.getUnresolvedConflicts(
             userId,
             entityType as string,
-            parseInt(limit as string),
-            parseInt(offset as string)
+            Number.parseInt(limit as string),
+            Number.parseInt(offset as string)
         );
 
         res.json({
@@ -246,33 +247,96 @@ export const updateDeviceStatus = async (req: Request, res: Response) => {
     try {
         const errors = validationResult(req);
         if (!errors.isEmpty()) {
-            return res.status(400).json({ errors: errors.array() });
+            console.error('Validation errors:', errors.array());
+            return res.status(400).json({ 
+                success: false,
+                error: 'Validation failed',
+                errors: errors.array() 
+            });
         }
 
         const userId = req.user.id;
-        const update: DeviceStatusUpdate = {
-            userId,
-            ...req.body,
-        };
+        const {
+            deviceId,
+            isOnline = true,
+            connectionType = 'unknown',
+            networkQuality = 'good',
+            batteryLevel,
+            appVersion,
+            platform = 'web',
+            syncEnabled = true,
+            lastSyncAttempt,
+            lastSuccessfulSync,
+            pendingSyncItems = 0,
+        } = req.body;
 
-        const status = await OfflineStatusService.updateDeviceStatus(update);
+        // Validate required fields
+        if (!deviceId) {
+            return res.status(400).json({ 
+                success: false,
+                error: 'Device ID is required' 
+            });
+        }
+
+        if (!appVersion) {
+            return res.status(400).json({ 
+                success: false,
+                error: 'App version is required' 
+            });
+        }
+
+        // Upsert device status using raw SQL
+        const result = await pgPool.query(`
+            INSERT INTO device_status (
+                user_id, device_id, is_online, connection_type, network_quality,
+                battery_level, app_version, platform, sync_enabled,
+                last_sync_attempt, last_successful_sync, pending_sync_items,
+                last_seen, created_at, updated_at
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+            ON CONFLICT (user_id, device_id) DO UPDATE SET
+                is_online = EXCLUDED.is_online,
+                connection_type = EXCLUDED.connection_type,
+                network_quality = EXCLUDED.network_quality,
+                battery_level = EXCLUDED.battery_level,
+                app_version = EXCLUDED.app_version,
+                platform = EXCLUDED.platform,
+                sync_enabled = EXCLUDED.sync_enabled,
+                last_sync_attempt = EXCLUDED.last_sync_attempt,
+                last_successful_sync = EXCLUDED.last_successful_sync,
+                pending_sync_items = EXCLUDED.pending_sync_items,
+                last_seen = CURRENT_TIMESTAMP,
+                updated_at = CURRENT_TIMESTAMP
+            RETURNING *
+        `, [
+            userId, deviceId, isOnline, connectionType, networkQuality,
+            batteryLevel || null, appVersion, platform, syncEnabled,
+            lastSyncAttempt ? new Date(lastSyncAttempt) : new Date(),
+            lastSuccessfulSync ? new Date(lastSuccessfulSync) : null,
+            pendingSyncItems || 0
+        ]);
+
+        const status = result.rows[0];
 
         res.json({
             success: true,
             message: 'Device status updated',
             status: {
-                deviceId: status.deviceId,
-                isOnline: status.isOnline,
-                lastSeen: status.lastSeen,
+                deviceId: status.device_id,
+                isOnline: status.is_online,
+                lastSeen: status.last_seen,
                 platform: status.platform,
-                syncEnabled: status.syncEnabled,
-                pendingSyncItems: status.pendingSyncItems,
+                syncEnabled: status.sync_enabled,
+                pendingSyncItems: status.pending_sync_items,
+                lastSuccessfulSync: status.last_successful_sync,
             },
         });
 
     } catch (error: any) {
         console.error('Update device status error:', error);
-        res.status(500).json({ error: error.message || 'Failed to update device status' });
+        res.status(500).json({ 
+            success: false,
+            error: error.message || 'Failed to update device status' 
+        });
     }
 };
 
@@ -284,22 +348,27 @@ export const getDeviceStatuses = async (req: Request, res: Response) => {
         const userId = req.user.id;
         const { includeOffline = true } = req.query;
 
-        const devices = await OfflineStatusService.getUserDevices(
-            userId,
-            includeOffline === 'true'
-        );
+        const devices = await pgPool.query(`
+            SELECT
+                device_id, is_online, last_seen, platform, app_version,
+                sync_enabled, pending_sync_items, last_successful_sync
+            FROM device_status
+            WHERE user_id = $1
+            ${includeOffline === 'false' ? 'AND is_online = true' : ''}
+            ORDER BY last_seen DESC
+        `, [userId]);
 
         res.json({
             success: true,
-            devices: devices.map(device => ({
-                deviceId: device.deviceId,
-                isOnline: device.isOnline,
-                lastSeen: device.lastSeen,
+            devices: devices.rows.map((device: any) => ({
+                deviceId: device.device_id,
+                isOnline: device.is_online,
+                lastSeen: device.last_seen,
                 platform: device.platform,
-                appVersion: device.appVersion,
-                syncEnabled: device.syncEnabled,
-                pendingSyncItems: device.pendingSyncItems,
-                lastSuccessfulSync: device.lastSuccessfulSync,
+                appVersion: device.app_version,
+                syncEnabled: device.sync_enabled,
+                pendingSyncItems: device.pending_sync_items,
+                lastSuccessfulSync: device.last_successful_sync,
             })),
         });
 
@@ -408,8 +477,8 @@ export const getDataVersionHistory = async (req: Request, res: Response) => {
         const versions = await DataVersioningService.getVersionHistory(
             entityType,
             entityId,
-            parseInt(limit as string),
-            parseInt(offset as string)
+            Number.parseInt(limit as string),
+            Number.parseInt(offset as string)
         );
 
         res.json({

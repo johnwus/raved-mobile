@@ -1,442 +1,476 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.analyticsController = exports.AnalyticsController = void 0;
-const analytics_service_1 = require("../services/analytics.service");
-const logging_middleware_1 = require("../middleware/logging.middleware");
+exports.analyticsController = void 0;
 const database_1 = require("../config/database");
-class AnalyticsController {
-    // Get real-time analytics metrics
-    async getRealtimeMetrics(req, res) {
+const post_model_1 = require("../models/mongoose/post.model");
+exports.analyticsController = {
+    // Get user analytics
+    getUserAnalytics: async (req, res) => {
         try {
-            const timeRange = parseInt(req.query.timeRange) || 60; // Default 60 minutes
-            const metrics = await analytics_service_1.analyticsService.getRealtimeMetrics(timeRange);
-            res.json({
-                success: true,
-                data: metrics
-            });
-        }
-        catch (error) {
-            logging_middleware_1.logger.error('Failed to get realtime metrics', error);
-            res.status(500).json({
-                success: false,
-                message: 'Failed to fetch realtime metrics'
-            });
-        }
-    }
-    // Get analytics dashboard overview
-    async getDashboardOverview(req, res) {
-        try {
-            const period = req.query.period || '7d'; // 1d, 7d, 30d, 90d
-            const endDate = new Date();
-            const startDate = new Date();
+            const userId = req.user.id;
+            const { period = '30d' } = req.query;
+            let dateThreshold;
+            const now = new Date();
             switch (period) {
-                case '1d':
-                    startDate.setDate(endDate.getDate() - 1);
-                    break;
                 case '7d':
-                    startDate.setDate(endDate.getDate() - 7);
+                    dateThreshold = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
                     break;
                 case '30d':
-                    startDate.setDate(endDate.getDate() - 30);
+                    dateThreshold = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
                     break;
                 case '90d':
-                    startDate.setDate(endDate.getDate() - 90);
+                    dateThreshold = new Date(now.getTime() - 90 * 24 * 60 * 60 * 1000);
                     break;
                 default:
-                    startDate.setDate(endDate.getDate() - 7);
+                    dateThreshold = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
             }
-            const [realtimeMetrics, userActivity, topPages, deviceBreakdown] = await Promise.all([
-                analytics_service_1.analyticsService.getRealtimeMetrics(1440), // Last 24 hours
-                this.getUserActivityStats(startDate, endDate),
-                this.getTopPages(startDate, endDate),
-                this.getDeviceBreakdown(startDate, endDate)
-            ]);
+            // Get post analytics from MongoDB
+            const posts = await post_model_1.Post.find({
+                userId,
+                createdAt: { $gte: dateThreshold },
+                deletedAt: null
+            }).lean();
+            const postStats = {
+                total_posts: posts.length,
+                total_likes: posts.reduce((sum, p) => sum + (p.likesCount || 0), 0),
+                total_comments: posts.reduce((sum, p) => sum + (p.commentsCount || 0), 0),
+                total_shares: posts.reduce((sum, p) => sum + (p.sharesCount || 0), 0),
+                total_views: posts.reduce((sum, p) => sum + (p.viewsCount || 0), 0),
+                avg_likes_per_post: posts.length > 0
+                    ? posts.reduce((sum, p) => sum + (p.likesCount || 0), 0) / posts.length
+                    : 0,
+                avg_comments_per_post: posts.length > 0
+                    ? posts.reduce((sum, p) => sum + (p.commentsCount || 0), 0) / posts.length
+                    : 0
+            };
+            // Get follower growth
+            const followerGrowth = await database_1.pgPool.query(`
+        SELECT 
+          DATE(created_at) as date,
+          COUNT(*) as new_followers
+        FROM connections
+        WHERE following_id = $1 
+          AND status = 'accepted'
+          AND created_at >= $2
+        GROUP BY DATE(created_at)
+        ORDER BY date ASC
+      `, [userId, dateThreshold]);
+            // Get engagement rate
+            const engagementRate = postStats.total_views > 0
+                ? ((postStats.total_likes + postStats.total_comments) / postStats.total_views) * 100
+                : 0;
+            // Get best performing posts from MongoDB
+            const bestPosts = await post_model_1.Post.find({
+                userId,
+                createdAt: { $gte: dateThreshold },
+                deletedAt: null
+            })
+                .sort({
+                likesCount: -1,
+                commentsCount: -1,
+                sharesCount: -1
+            })
+                .limit(5)
+                .lean();
+            // Get audience demographics (faculty distribution of followers)
+            const audienceDemographics = await database_1.pgPool.query(`
+        SELECT 
+          u.faculty,
+          COUNT(*) as count
+        FROM connections c
+        JOIN users u ON c.follower_id = u.id
+        WHERE c.following_id = $1 
+          AND c.status = 'accepted'
+        GROUP BY u.faculty
+        ORDER BY count DESC
+      `, [userId]);
             res.json({
                 success: true,
-                data: {
+                analytics: {
                     period,
-                    realtime: realtimeMetrics,
-                    userActivity,
-                    topPages,
-                    deviceBreakdown,
-                    generatedAt: new Date().toISOString()
+                    posts: {
+                        total: postStats.total_posts,
+                        totalLikes: postStats.total_likes,
+                        totalComments: postStats.total_comments,
+                        totalShares: postStats.total_shares,
+                        totalViews: postStats.total_views,
+                        avgLikesPerPost: parseFloat(postStats.avg_likes_per_post.toFixed(2)),
+                        avgCommentsPerPost: parseFloat(postStats.avg_comments_per_post.toFixed(2)),
+                        engagementRate: parseFloat(engagementRate.toFixed(2))
+                    },
+                    followers: {
+                        growth: followerGrowth.rows.map(row => ({
+                            date: row.date,
+                            count: parseInt(row.new_followers)
+                        }))
+                    },
+                    bestPosts: bestPosts.map(post => ({
+                        id: post._id.toString(),
+                        caption: post.caption?.substring(0, 50) || '',
+                        likes: post.likesCount || 0,
+                        comments: post.commentsCount || 0,
+                        shares: post.sharesCount || 0,
+                        views: post.viewsCount || 0,
+                        createdAt: post.createdAt
+                    })),
+                    audience: {
+                        demographics: audienceDemographics.rows.map(demo => ({
+                            faculty: demo.faculty || 'Unknown',
+                            count: parseInt(demo.count)
+                        }))
+                    }
                 }
             });
         }
         catch (error) {
-            logging_middleware_1.logger.error('Failed to get dashboard overview', error);
-            res.status(500).json({
-                success: false,
-                message: 'Failed to fetch dashboard overview'
+            console.error('Get User Analytics Error:', error);
+            res.status(500).json({ error: 'Failed to get analytics' });
+        }
+    },
+    // Track analytics event
+    trackEvent: async (req, res) => {
+        try {
+            const userId = req.user.id;
+            const { eventType, eventCategory, eventAction, eventLabel, eventValue, metadata } = req.body;
+            const sessionId = req.headers['x-session-id'] || `session_${Date.now()}`;
+            await database_1.pgPool.query(`
+        INSERT INTO analytics_events (
+          user_id, session_id, event_type, event_category, event_action,
+          event_label, event_value, metadata, timestamp
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, CURRENT_TIMESTAMP)
+      `, [
+                userId,
+                sessionId,
+                eventType || 'user_action',
+                eventCategory || 'general',
+                eventAction || 'click',
+                eventLabel,
+                eventValue,
+                metadata ? JSON.stringify(metadata) : '{}'
+            ]);
+            res.json({ success: true });
+        }
+        catch (error) {
+            console.error('Track Event Error:', error);
+            res.status(500).json({ error: 'Failed to track event' });
+        }
+    },
+    // Get store analytics (for sellers)
+    getStoreAnalytics: async (req, res) => {
+        try {
+            const userId = req.user.id;
+            const { period = '30d' } = req.query;
+            let dateThreshold;
+            const now = new Date();
+            switch (period) {
+                case '7d':
+                    dateThreshold = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+                    break;
+                case '30d':
+                    dateThreshold = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+                    break;
+                case '90d':
+                    dateThreshold = new Date(now.getTime() - 90 * 24 * 60 * 60 * 1000);
+                    break;
+                default:
+                    dateThreshold = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+            }
+            // Get store item stats
+            const storeStats = await database_1.pgPool.query(`
+        SELECT 
+          COUNT(*) as total_items,
+          SUM(views_count) as total_views,
+          SUM(likes_count) as total_likes,
+          SUM(saves_count) as total_saves,
+          SUM(sales_count) as total_sales,
+          SUM(price * sales_count) as total_revenue,
+          AVG(views_count) as avg_views_per_item,
+          AVG(likes_count) as avg_likes_per_item
+        FROM store_items
+        WHERE seller_id = $1 
+          AND created_at >= $2
+          AND deleted_at IS NULL
+      `, [userId, dateThreshold]);
+            // Get top selling items
+            const topItems = await database_1.pgPool.query(`
+        SELECT 
+          id,
+          name,
+          price,
+          sales_count,
+          views_count,
+          likes_count,
+          created_at
+        FROM store_items
+        WHERE seller_id = $1 
+          AND created_at >= $2
+          AND deleted_at IS NULL
+        ORDER BY sales_count DESC, views_count DESC
+        LIMIT 5
+      `, [userId, dateThreshold]);
+            // Get sales over time
+            const salesOverTime = await database_1.pgPool.query(`
+        SELECT 
+          DATE(created_at) as date,
+          COUNT(*) as items_sold,
+          SUM(price * sales_count) as revenue
+        FROM store_items
+        WHERE seller_id = $1 
+          AND created_at >= $2
+          AND sales_count > 0
+          AND deleted_at IS NULL
+        GROUP BY DATE(created_at)
+        ORDER BY date ASC
+      `, [userId, dateThreshold]);
+            res.json({
+                success: true,
+                analytics: {
+                    period,
+                    items: {
+                        total: parseInt(storeStats.rows[0].total_items || 0),
+                        totalViews: parseInt(storeStats.rows[0].total_views || 0),
+                        totalLikes: parseInt(storeStats.rows[0].total_likes || 0),
+                        totalSaves: parseInt(storeStats.rows[0].total_saves || 0),
+                        avgViewsPerItem: parseFloat(storeStats.rows[0].avg_views_per_item || 0),
+                        avgLikesPerItem: parseFloat(storeStats.rows[0].avg_likes_per_item || 0)
+                    },
+                    sales: {
+                        total: parseInt(storeStats.rows[0].total_sales || 0),
+                        totalRevenue: parseFloat(storeStats.rows[0].total_revenue || 0)
+                    },
+                    topItems: topItems.rows.map(item => ({
+                        id: item.id,
+                        name: item.name,
+                        price: parseFloat(item.price),
+                        sales: parseInt(item.sales_count || 0),
+                        views: parseInt(item.views_count || 0),
+                        likes: parseInt(item.likes_count || 0),
+                        createdAt: item.created_at
+                    })),
+                    salesOverTime: salesOverTime.rows.map(row => ({
+                        date: row.date,
+                        itemsSold: parseInt(row.items_sold || 0),
+                        revenue: parseFloat(row.revenue || 0)
+                    }))
+                }
             });
         }
-    }
-    // Get user activity statistics
-    async getUserActivityStats(startDate, endDate) {
-        const result = await database_1.pgPool.query(`
-      SELECT
-        DATE(timestamp) as date,
-        COUNT(DISTINCT user_id) as active_users,
-        COUNT(*) as total_events
-      FROM analytics_events
-      WHERE timestamp BETWEEN $1 AND $2 AND user_id IS NOT NULL
-      GROUP BY DATE(timestamp)
-      ORDER BY date DESC
-      LIMIT 30
-    `, [startDate, endDate]);
-        return result.rows;
-    }
-    // Get top pages
-    async getTopPages(startDate, endDate) {
-        const result = await database_1.pgPool.query(`
-      SELECT
-        page_url,
-        COUNT(*) as views,
-        COUNT(DISTINCT session_id) as unique_views,
-        AVG(event_value) as avg_time_spent
-      FROM analytics_events
-      WHERE timestamp BETWEEN $1 AND $2 AND event_type = 'page_view'
-      GROUP BY page_url
-      ORDER BY views DESC
-      LIMIT 10
-    `, [startDate, endDate]);
-        return result.rows;
-    }
-    // Get device breakdown
-    async getDeviceBreakdown(startDate, endDate) {
-        const result = await database_1.pgPool.query(`
-      SELECT
-        device_type,
-        COUNT(*) as count,
-        ROUND(COUNT(*) * 100.0 / SUM(COUNT(*)) OVER(), 2) as percentage
-      FROM analytics_events
-      WHERE timestamp BETWEEN $1 AND $2
-      GROUP BY device_type
-      ORDER BY count DESC
-    `, [startDate, endDate]);
-        return result.rows;
-    }
-    // Get user activity history
-    async getUserActivityHistory(req, res) {
+        catch (error) {
+            console.error('Get Store Analytics Error:', error);
+            res.status(500).json({ error: 'Failed to get store analytics' });
+        }
+    },
+    // Admin-only analytics methods
+    getDashboardOverview: async (req, res) => {
+        try {
+            // Get overall platform statistics
+            const userCount = await database_1.pgPool.query('SELECT COUNT(*) as count FROM users WHERE deleted_at IS NULL');
+            const postCount = await post_model_1.Post.countDocuments({ deletedAt: null });
+            const activeUsers = await database_1.pgPool.query(`
+        SELECT COUNT(DISTINCT user_id) as count 
+        FROM analytics_events 
+        WHERE timestamp >= CURRENT_TIMESTAMP - INTERVAL '24 hours'
+      `);
+            res.json({
+                success: true,
+                dashboard: {
+                    totalUsers: parseInt(userCount.rows[0].count),
+                    totalPosts: postCount,
+                    activeUsers24h: parseInt(activeUsers.rows[0].count || 0),
+                    timestamp: new Date()
+                }
+            });
+        }
+        catch (error) {
+            console.error('Get Dashboard Overview Error:', error);
+            res.status(500).json({ error: 'Failed to get dashboard overview' });
+        }
+    },
+    getRealtimeMetrics: async (req, res) => {
+        try {
+            // Get real-time metrics (last hour)
+            const lastHour = new Date(Date.now() - 60 * 60 * 1000);
+            const metrics = await database_1.pgPool.query(`
+        SELECT 
+          COUNT(DISTINCT user_id) as active_users,
+          COUNT(*) as events_count
+        FROM analytics_events
+        WHERE timestamp >= $1
+      `, [lastHour]);
+            res.json({
+                success: true,
+                metrics: {
+                    activeUsers: parseInt(metrics.rows[0].active_users || 0),
+                    eventsCount: parseInt(metrics.rows[0].events_count || 0),
+                    timestamp: new Date()
+                }
+            });
+        }
+        catch (error) {
+            console.error('Get Realtime Metrics Error:', error);
+            res.status(500).json({ error: 'Failed to get realtime metrics' });
+        }
+    },
+    getUserActivityHistory: async (req, res) => {
         try {
             const { userId } = req.params;
+            const page = parseInt(req.query.page) || 1;
             const limit = parseInt(req.query.limit) || 50;
-            const offset = parseInt(req.query.offset) || 0;
-            const activities = await analytics_service_1.analyticsService.getUserActivityHistory(userId, limit, offset);
-            res.json({
-                success: true,
-                data: activities,
-                pagination: {
-                    limit,
-                    offset,
-                    hasMore: activities.length === limit
-                }
-            });
-        }
-        catch (error) {
-            logging_middleware_1.logger.error('Failed to get user activity history', error);
-            res.status(500).json({
-                success: false,
-                message: 'Failed to fetch user activity history'
-            });
-        }
-    }
-    // Generate analytics report
-    async generateReport(req, res) {
-        try {
-            const { reportType, startDate, endDate } = req.body;
-            if (!['daily', 'weekly', 'monthly'].includes(reportType)) {
-                return res.status(400).json({
-                    success: false,
-                    message: 'Invalid report type. Must be daily, weekly, or monthly.'
-                });
-            }
-            const start = startDate ? new Date(startDate) : new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
-            const end = endDate ? new Date(endDate) : new Date();
-            const report = await analytics_service_1.analyticsService.generateReport(reportType, start, end);
-            res.json({
-                success: true,
-                data: report
-            });
-        }
-        catch (error) {
-            logging_middleware_1.logger.error('Failed to generate report', error);
-            res.status(500).json({
-                success: false,
-                message: 'Failed to generate analytics report'
-            });
-        }
-    }
-    // Get analytics reports list
-    async getReports(req, res) {
-        try {
-            const limit = parseInt(req.query.limit) || 20;
-            const offset = parseInt(req.query.offset) || 0;
-            const reportType = req.query.type;
-            let query = `
-        SELECT * FROM analytics_reports
-        WHERE 1=1
-      `;
-            const params = [];
-            let paramIndex = 1;
-            if (reportType) {
-                query += ` AND report_type = $${paramIndex}`;
-                params.push(reportType);
-                paramIndex++;
-            }
-            query += ` ORDER BY generated_at DESC LIMIT $${paramIndex} OFFSET $${paramIndex + 1}`;
-            params.push(limit, offset);
-            const result = await database_1.pgPool.query(query, params);
-            const reports = result.rows.map((row) => ({
-                ...row,
-                data: typeof row.data === 'string' ? JSON.parse(row.data) : row.data
-            }));
-            res.json({
-                success: true,
-                data: reports,
-                pagination: {
-                    limit,
-                    offset,
-                    hasMore: reports.length === limit
-                }
-            });
-        }
-        catch (error) {
-            logging_middleware_1.logger.error('Failed to get reports', error);
-            res.status(500).json({
-                success: false,
-                message: 'Failed to fetch analytics reports'
-            });
-        }
-    }
-    // A/B Testing endpoints
-    // Create A/B test
-    async createABTest(req, res) {
-        try {
-            const testData = req.body;
-            // Validate required fields
-            if (!testData.test_name || !testData.feature_name || !testData.variants) {
-                return res.status(400).json({
-                    success: false,
-                    message: 'Missing required fields: test_name, feature_name, variants'
-                });
-            }
-            // Validate variants is an array
-            if (!Array.isArray(testData.variants) || testData.variants.length < 2) {
-                return res.status(400).json({
-                    success: false,
-                    message: 'Variants must be an array with at least 2 options'
-                });
-            }
-            const test = await analytics_service_1.analyticsService.createABTest({
-                test_name: testData.test_name,
-                test_description: testData.test_description,
-                feature_name: testData.feature_name,
-                variants: testData.variants,
-                weights: testData.weights,
-                start_date: new Date(testData.start_date || Date.now()),
-                end_date: testData.end_date ? new Date(testData.end_date) : undefined,
-                status: testData.status || 'active'
-            });
-            res.status(201).json({
-                success: true,
-                data: test
-            });
-        }
-        catch (error) {
-            logging_middleware_1.logger.error('Failed to create A/B test', error);
-            res.status(500).json({
-                success: false,
-                message: 'Failed to create A/B test'
-            });
-        }
-    }
-    // Get A/B test variant for user
-    async getABTestVariant(req, res) {
-        try {
-            const { testName } = req.params;
-            const userId = req.user?.id;
-            if (!userId) {
-                return res.status(401).json({
-                    success: false,
-                    message: 'User authentication required'
-                });
-            }
-            const variant = await analytics_service_1.analyticsService.getVariantForUser(testName, userId);
-            res.json({
-                success: true,
-                data: {
-                    testName,
-                    variant,
-                    userId
-                }
-            });
-        }
-        catch (error) {
-            logging_middleware_1.logger.error('Failed to get A/B test variant', error);
-            res.status(500).json({
-                success: false,
-                message: 'Failed to get A/B test variant'
-            });
-        }
-    }
-    // Track A/B test result
-    async trackABTestResult(req, res) {
-        try {
-            const { testName } = req.params;
-            const { eventType, eventValue } = req.body;
-            const userId = req.user?.id;
-            if (!userId) {
-                return res.status(401).json({
-                    success: false,
-                    message: 'User authentication required'
-                });
-            }
-            await analytics_service_1.analyticsService.trackABTestResult(testName, userId, eventType, eventValue);
-            res.json({
-                success: true,
-                message: 'A/B test result tracked successfully'
-            });
-        }
-        catch (error) {
-            logging_middleware_1.logger.error('Failed to track A/B test result', error);
-            res.status(500).json({
-                success: false,
-                message: 'Failed to track A/B test result'
-            });
-        }
-    }
-    // Get A/B test results
-    async getABTestResults(req, res) {
-        try {
-            const { testName } = req.params;
-            const result = await database_1.pgPool.query(`
-        SELECT
-          variant_name,
-          COUNT(DISTINCT user_id) as participants,
-          COUNT(CASE WHEN event_type != 'variant_assigned' THEN 1 END) as conversions,
-          AVG(CASE WHEN event_type != 'variant_assigned' THEN event_value END) as avg_conversion_value
-        FROM ab_test_results
-        WHERE test_id = (SELECT id FROM ab_tests WHERE test_name = $1)
-        GROUP BY variant_name
-      `, [testName]);
-            res.json({
-                success: true,
-                data: {
-                    testName,
-                    results: result.rows
-                }
-            });
-        }
-        catch (error) {
-            logging_middleware_1.logger.error('Failed to get A/B test results', error);
-            res.status(500).json({
-                success: false,
-                message: 'Failed to fetch A/B test results'
-            });
-        }
-    }
-    // Custom analytics queries
-    async runCustomQuery(req, res) {
-        try {
-            const { query, params, type } = req.body;
-            // Basic security check - only allow SELECT queries
-            if (!query.toLowerCase().trim().startsWith('select')) {
-                return res.status(400).json({
-                    success: false,
-                    message: 'Only SELECT queries are allowed'
-                });
-            }
-            // Limit query execution time and results
-            const limitedQuery = `${query} LIMIT 1000`;
-            const result = await database_1.pgPool.query(limitedQuery, params || []);
-            res.json({
-                success: true,
-                data: {
-                    rows: result.rows,
-                    rowCount: result.rowCount,
-                    fields: result.fields?.map((f) => f.name)
-                }
-            });
-        }
-        catch (error) {
-            logging_middleware_1.logger.error('Failed to run custom query', error);
-            res.status(500).json({
-                success: false,
-                message: 'Failed to execute custom query'
-            });
-        }
-    }
-    // Export analytics data
-    async exportAnalyticsData(req, res) {
-        try {
-            const { startDate, endDate, format } = req.query;
-            const start = startDate ? new Date(startDate) : new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
-            const end = endDate ? new Date(endDate) : new Date();
-            const result = await database_1.pgPool.query(`
-        SELECT
-          timestamp,
+            const offset = (page - 1) * limit;
+            const activities = await database_1.pgPool.query(`
+        SELECT 
           event_type,
           event_category,
           event_action,
-          user_id,
-          session_id,
-          page_url,
-          device_type,
-          browser,
-          os
+          event_label,
+          timestamp
         FROM analytics_events
-        WHERE timestamp BETWEEN $1 AND $2
+        WHERE user_id = $1
         ORDER BY timestamp DESC
-        LIMIT 50000
-      `, [start, end]);
-            if (format === 'csv') {
-                // Convert to CSV format
-                const csvData = this.convertToCSV(result.rows);
-                res.setHeader('Content-Type', 'text/csv');
-                res.setHeader('Content-Disposition', 'attachment; filename="analytics_export.csv"');
-                res.send(csvData);
-            }
-            else {
-                // JSON format
-                res.setHeader('Content-Type', 'application/json');
-                res.setHeader('Content-Disposition', 'attachment; filename="analytics_export.json"');
-                res.json({
-                    success: true,
-                    data: result.rows,
-                    metadata: {
-                        startDate: start.toISOString(),
-                        endDate: end.toISOString(),
-                        totalRecords: result.rowCount
-                    }
-                });
-            }
-        }
-        catch (error) {
-            logging_middleware_1.logger.error('Failed to export analytics data', error);
-            res.status(500).json({
-                success: false,
-                message: 'Failed to export analytics data'
+        LIMIT $2 OFFSET $3
+      `, [userId, limit, offset]);
+            res.json({
+                success: true,
+                activities: activities.rows,
+                pagination: {
+                    page,
+                    limit,
+                    hasMore: activities.rows.length === limit
+                }
             });
         }
-    }
-    convertToCSV(data) {
-        if (data.length === 0)
-            return '';
-        const headers = Object.keys(data[0]);
-        const csvRows = [
-            headers.join(','),
-            ...data.map(row => headers.map(header => {
-                const value = row[header];
-                // Escape commas and quotes in CSV
-                if (typeof value === 'string' && (value.includes(',') || value.includes('"'))) {
-                    return `"${value.replace(/"/g, '""')}"`;
+        catch (error) {
+            console.error('Get User Activity History Error:', error);
+            res.status(500).json({ error: 'Failed to get user activity history' });
+        }
+    },
+    generateReport: async (req, res) => {
+        try {
+            const { reportType, startDate, endDate } = req.body;
+            // Placeholder for report generation
+            res.json({
+                success: true,
+                message: 'Report generation feature coming soon',
+                reportType,
+                startDate,
+                endDate
+            });
+        }
+        catch (error) {
+            console.error('Generate Report Error:', error);
+            res.status(500).json({ error: 'Failed to generate report' });
+        }
+    },
+    getReports: async (req, res) => {
+        try {
+            // Placeholder for getting reports list
+            res.json({
+                success: true,
+                reports: []
+            });
+        }
+        catch (error) {
+            console.error('Get Reports Error:', error);
+            res.status(500).json({ error: 'Failed to get reports' });
+        }
+    },
+    createABTest: async (req, res) => {
+        try {
+            const { testName, variants } = req.body;
+            // Placeholder for A/B test creation
+            res.json({
+                success: true,
+                message: 'A/B test creation feature coming soon',
+                testName,
+                variants
+            });
+        }
+        catch (error) {
+            console.error('Create AB Test Error:', error);
+            res.status(500).json({ error: 'Failed to create A/B test' });
+        }
+    },
+    getABTestVariant: async (req, res) => {
+        try {
+            const { testName } = req.params;
+            // Placeholder for getting A/B test variant
+            res.json({
+                success: true,
+                testName,
+                variant: 'control'
+            });
+        }
+        catch (error) {
+            console.error('Get AB Test Variant Error:', error);
+            res.status(500).json({ error: 'Failed to get A/B test variant' });
+        }
+    },
+    trackABTestResult: async (req, res) => {
+        try {
+            const { testName } = req.params;
+            const { variant, result } = req.body;
+            // Placeholder for tracking A/B test results
+            res.json({
+                success: true,
+                message: 'A/B test result tracked',
+                testName,
+                variant,
+                result
+            });
+        }
+        catch (error) {
+            console.error('Track AB Test Result Error:', error);
+            res.status(500).json({ error: 'Failed to track A/B test result' });
+        }
+    },
+    getABTestResults: async (req, res) => {
+        try {
+            const { testName } = req.params;
+            // Placeholder for getting A/B test results
+            res.json({
+                success: true,
+                testName,
+                results: {
+                    control: { conversions: 0, visitors: 0 },
+                    variant: { conversions: 0, visitors: 0 }
                 }
-                return value || '';
-            }).join(','))
-        ];
-        return csvRows.join('\n');
+            });
+        }
+        catch (error) {
+            console.error('Get AB Test Results Error:', error);
+            res.status(500).json({ error: 'Failed to get A/B test results' });
+        }
+    },
+    runCustomQuery: async (req, res) => {
+        try {
+            const { query } = req.body;
+            // Placeholder for custom query execution
+            res.json({
+                success: true,
+                message: 'Custom query feature coming soon',
+                query
+            });
+        }
+        catch (error) {
+            console.error('Run Custom Query Error:', error);
+            res.status(500).json({ error: 'Failed to run custom query' });
+        }
+    },
+    exportAnalyticsData: async (req, res) => {
+        try {
+            const { format = 'json', startDate, endDate } = req.query;
+            // Placeholder for data export
+            res.json({
+                success: true,
+                message: 'Data export feature coming soon',
+                format,
+                startDate,
+                endDate
+            });
+        }
+        catch (error) {
+            console.error('Export Analytics Data Error:', error);
+            res.status(500).json({ error: 'Failed to export analytics data' });
+        }
     }
-}
-exports.AnalyticsController = AnalyticsController;
-exports.analyticsController = new AnalyticsController();
+};

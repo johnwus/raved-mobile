@@ -43,6 +43,13 @@ export default function CreatePostScreen() {
   const [locationLoading, setLocationLoading] = useState(false);
   const locationDebounce = useRef<any>(null);
   const [_validSale, setValidSale] = useState(true);
+
+  // Visibility
+  const [visibility, setVisibility] = useState<'public' | 'connections' | 'faculty'>('public');
+
+  // Outfit details
+  const [brand, setBrand] = useState('');
+  const [occasion, setOccasion] = useState('');
   
   // Marketplace state
   const [isForSale, setIsForSale] = useState(false);
@@ -156,7 +163,9 @@ export default function CreatePostScreen() {
         media: uploadedMedia,
         location: location || undefined,
         tags: tags,
-        visibility: 'public' as const,
+        brand: brand || undefined,
+        occasion: occasion || undefined,
+        visibility,
         isForSale,
         saleDetails: isForSale ? {
           itemName: itemDescription || caption.slice(0, 50),
@@ -211,10 +220,30 @@ export default function CreatePostScreen() {
                 <Text style={styles.userFaculty}>{user?.faculty}</Text>
               </View>
               <View style={styles.visibilityRow}>
-                <Ionicons name="globe" size={14} color="#6B7280" />
-                <Text style={styles.visibilityText}>Everyone can see</Text>
+                <Ionicons name={visibility === 'public' ? 'globe' : visibility === 'connections' ? 'people' : 'home'} size={14} color="#6B7280" />
+                <Text style={styles.visibilityText}>
+                  {visibility === 'public' ? 'Everyone can see' : visibility === 'connections' ? 'Connections can see' : 'Faculty can see'}
+                </Text>
               </View>
             </View>
+          </View>
+
+          {/* Visibility selector */}
+          <View style={styles.segmentContainer}>
+            {[
+              { key: 'public', label: 'Public', icon: 'globe' },
+              { key: 'connections', label: 'Connections', icon: 'people' },
+              { key: 'faculty', label: 'Faculty', icon: 'home' },
+            ].map(opt => (
+              <TouchableOpacity
+                key={opt.key}
+                style={[styles.segment, visibility === (opt.key as any) && styles.segmentActive]}
+                onPress={() => setVisibility(opt.key as any)}
+              >
+                <Ionicons name={opt.icon as any} size={14} color={visibility === (opt.key as any) ? 'white' : '#6B7280'} />
+                <Text style={[styles.segmentText, visibility === (opt.key as any) && styles.segmentTextActive]}>{opt.label}</Text>
+              </TouchableOpacity>
+            ))}
           </View>
 
           {/* Caption Input */}
@@ -374,6 +403,34 @@ export default function CreatePostScreen() {
                 ))}
             </View>
           )}
+        </View>
+
+        {/* Outfit Details */}
+        <View style={styles.sectionCard}>
+          <Text style={styles.sectionTitle}>👗 Outfit Details</Text>
+
+          <View style={styles.saleRow}>
+            <View style={styles.saleInput}>
+              <Text style={styles.saleLabel}>Brand</Text>
+              <TextInput
+                style={styles.saleInputField}
+                placeholder="e.g., Zara, H&M, Thrifted"
+                placeholderTextColor="#9CA3AF"
+                value={brand}
+                onChangeText={setBrand}
+              />
+            </View>
+            <View style={styles.saleInput}>
+              <Text style={styles.saleLabel}>Occasion</Text>
+              <View style={styles.selectChips}>
+                {['Casual','Formal','Party','Sports','Class','Date'].map((o) => (
+                  <TouchableOpacity key={o} style={[styles.chip, occasion===o && styles.chipActive]} onPress={() => setOccasion(o)}>
+                    <Text style={[styles.chipText, occasion===o && styles.chipTextActive]}>{o}</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            </View>
+          </View>
         </View>
 
         {/* Fashion Tags */}
@@ -674,6 +731,36 @@ const styles = StyleSheet.create({
   visibilityText: {
     fontSize: theme.typography.fontSize[12],
     color: '#6B7280',
+  },
+  segmentContainer: {
+    flexDirection: 'row',
+    backgroundColor: '#F3F4F6',
+    borderRadius: theme.borderRadius.full,
+    padding: 4,
+    alignSelf: 'center',
+    marginTop: theme.spacing[2],
+    marginBottom: theme.spacing[2],
+  },
+  segment: {
+    flex: 1,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: theme.borderRadius.full,
+    alignItems: 'center',
+    flexDirection: 'row',
+    justifyContent: 'center',
+    gap: 6,
+  },
+  segmentActive: {
+    backgroundColor: theme.colors.primary,
+  },
+  segmentText: {
+    fontSize: theme.typography.fontSize[12],
+    color: '#6B7280',
+    fontWeight: theme.typography.fontWeight.medium,
+  },
+  segmentTextActive: {
+    color: 'white',
   },
   captionContainer: {
     marginTop: theme.spacing[2],

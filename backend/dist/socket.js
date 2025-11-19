@@ -48,6 +48,8 @@ const createSocketServer = (app) => {
             credentials: true
         }
     });
+    // Track online users in memory
+    const onlineUsers = new Map();
     // Authentication middleware
     io.use(async (socket, next) => {
         try {
@@ -59,12 +61,17 @@ const createSocketServer = (app) => {
             if (!decoded) {
                 return next(new Error('Invalid token'));
             }
+            // Support tokens that carry `userId` or `id` in payload (matching auth middleware)
+            const userId = decoded?.userId || decoded?.id;
+            if (!userId) {
+                return next(new Error('Invalid token: missing user identifier'));
+            }
             // Get user info
-            const result = await database_1.pgPool.query('SELECT id, username, first_name, last_name FROM users WHERE id = $1 AND deleted_at IS NULL', [decoded.userId]);
+            const result = await database_1.pgPool.query('SELECT id, username, first_name, last_name FROM users WHERE id = $1 AND deleted_at IS NULL', [userId]);
             if (result.rows.length === 0) {
                 return next(new Error('User not found'));
             }
-            socket.userId = decoded.userId;
+            socket.userId = userId;
             socket.username = result.rows[0].username;
             next();
         }
@@ -78,6 +85,24 @@ const createSocketServer = (app) => {
         console.log(`User ${socket.username} (${socket.userId}) connected`);
         // Join user-specific room
         socket.join(`user:${socket.userId}`);
+        // Track this user as online
+        onlineUsers.set(socket.userId, {
+            userId: socket.userId,
+            username: socket.username,
+            timestamp: new Date()
+        });
+        // Send list of all currently online users to the connecting client
+        const usersList = Array.from(onlineUsers.values());
+        console.log(`Emitting users_online_list to ${socket.username}: ${JSON.stringify(usersList)}`);
+        socket.emit('users_online_list', usersList);
+        // Broadcast this user coming online to all other clients
+        const onlineEvent = {
+            userId: socket.userId,
+            username: socket.username,
+            timestamp: new Date()
+        };
+        console.log(`Broadcasting user_online: ${JSON.stringify(onlineEvent)}`);
+        socket.broadcast.emit('user_online', onlineEvent);
         // Handle joining chat rooms
         socket.on('join_chat', (chatId) => {
             socket.join(`chat:${chatId}`);
@@ -95,6 +120,12 @@ const createSocketServer = (app) => {
                 // Save message to database
                 const message = await chatService.sendMessage(data.chatId, socket.userId, data.content, data.type || 'text');
                 // Emit to all users in the chat room
+                console.log(`[SOCKET] Emitting new_message to chat:${data.chatId}`, {
+                    messageId: message.id,
+                    conversationId: message.conversationId,
+                    senderId: message.sender?.id,
+                    content: message.content?.substring(0, 50)
+                });
                 io.to(`chat:${data.chatId}`).emit('new_message', {
                     ...message,
                     senderUsername: socket.username,
@@ -142,6 +173,16 @@ const createSocketServer = (app) => {
         // Handle disconnection
         socket.on('disconnect', () => {
             console.log(`User ${socket.username} (${socket.userId}) disconnected`);
+            // Remove user from online tracking
+            onlineUsers.delete(socket.userId);
+            // Broadcast user going offline to all clients
+            const offlineEvent = {
+                userId: socket.userId,
+                username: socket.username,
+                timestamp: new Date()
+            };
+            console.log(`Broadcasting user_offline: ${JSON.stringify(offlineEvent)}`);
+            io.emit('user_offline', offlineEvent);
         });
     });
     return { httpServer, io };

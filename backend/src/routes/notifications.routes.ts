@@ -22,8 +22,17 @@ router.get('/', notificationsController.getNotifications);
 // Mark notification as read
 router.put('/:notificationId/read', notificationsController.markAsRead);
 
+// Delete all notifications (must come before parameterized route)
+router.delete('/all', notificationsController.deleteAllNotifications);
+
+// Delete notification (when user interacts with it)
+router.delete('/:notificationId', notificationsController.deleteNotification);
+
 // Mark all notifications as read
 router.put('/read-all', notificationsController.markAllAsRead);
+
+// Delete read notifications (older than X days)
+router.delete('/delete-read', notificationsController.deleteReadNotifications);
 
 // Get notification preferences
 router.get('/preferences', notificationsController.getNotificationPreferences);

@@ -63,7 +63,7 @@ router.post('/conflicts/auto-resolve', [
 ], autoResolveConflicts);
 
 // Device status management
-router.post('/device/status', [
+router.post('/device-status', [
     body('deviceId').isString().notEmpty().withMessage('Device ID is required'),
     body('isOnline').isBoolean().withMessage('isOnline must be a boolean'),
     body('connectionType').optional().isIn(['wifi', 'cellular', 'ethernet', 'unknown']).withMessage('Invalid connection type'),
@@ -78,7 +78,7 @@ router.post('/device/status', [
     handleValidationErrors,
 ], updateDeviceStatus);
 
-router.get('/device/status', [
+router.get('/device-status', [
     query('includeOffline').optional().isBoolean().withMessage('includeOffline must be a boolean'),
     handleValidationErrors,
 ], getDeviceStatuses);

@@ -11,7 +11,7 @@ exports.CONFIG = {
     NODE_ENV: process.env.NODE_ENV || 'development',
     API_BASE_URL: process.env.API_BASE_URL || 'https://api.raved.app',
     API_VERSION: 'v1',
-    JWT_SECRET: process.env.JWT_SECRET || 'raved-super-secret-key-change-in-production',
+    JWT_SECRET: process.env.JWT_SECRET || 'raved-super-secret-keys-change-in-production',
     JWT_REFRESH_SECRET: process.env.JWT_REFRESH_SECRET || 'raved-refresh-secret',
     JWT_EXPIRES_IN: '24h',
     JWT_REFRESH_EXPIRES_IN: '7d',

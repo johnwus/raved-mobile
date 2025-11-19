@@ -1,9 +1,43 @@
-import OpenAI from 'openai';
 import { CONFIG } from '../config';
 
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-});
+// Google Perspective API client
+class PerspectiveAPI {
+  private apiKey: string;
+  private baseUrl = 'https://commentanalyzer.googleapis.com/v1alpha1/comments:analyze';
+
+  constructor(apiKey: string) {
+    this.apiKey = apiKey;
+  }
+
+  async analyzeText(text: string): Promise<any> {
+    const response = await fetch(`${this.baseUrl}?key=${this.apiKey}`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        comment: { text },
+        languages: ['en'],
+        requestedAttributes: {
+          TOXICITY: {},
+          SEVERE_TOXICITY: {},
+          IDENTITY_ATTACK: {},
+          INSULT: {},
+          PROFANITY: {},
+          THREAT: {},
+        },
+      }),
+    });
+
+    if (!response.ok) {
+      throw new Error(`Perspective API error: ${response.status}`);
+    }
+
+    return response.json();
+  }
+}
+
+const perspectiveClient = new PerspectiveAPI(process.env.PERSPECTIVE_API_KEY || 'dummy-keys');
 
 export interface ModerationResult {
   isFlagged: boolean;
@@ -32,37 +66,67 @@ export interface ImageModerationResult {
 }
 
 class ModerationService {
-  // Text moderation using OpenAI Moderation API
+  // Text moderation using Google Perspective API (FREE)
   async moderateText(text: string): Promise<ModerationResult> {
     try {
-      const response = await openai.moderations.create({
-        model: 'text-moderation-latest',
-        input: text,
-      });
+      const response = await perspectiveClient.analyzeText(text);
+      const scores = response.attributeScores;
 
-      const result = response.results[0];
+      // Check for self-harm/death threat keywords (these should ALWAYS be high severity)
+      const selfHarmPatterns = [
+        /kill\s+(yourself|yourself|thyself|yourself)/i,
+        /suicide/i,
+        /(hang|poison|overdose|cut)\s+(yourself|yourself|thyself)/i,
+        /slit\s+(wrist|throat)/i,
+        /(jump|throw yourself)/i,
+        /end\s+(it|your life)/i,
+      ];
+
+      const isSelfHarmThreat = selfHarmPatterns.some(pattern => pattern.test(text));
+
+      // Map Perspective API scores to our format
+      const categories = {
+        hate: scores.IDENTITY_ATTACK?.summaryScore?.value > 0.5 || false,
+        hate_threatening: scores.IDENTITY_ATTACK?.summaryScore?.value > 0.7 || false,
+        self_harm: isSelfHarmThreat || false,
+        sexual: false, // Perspective doesn't have explicit sexual category
+        sexual_minors: false, // Perspective doesn't have this category
+        violence: scores.THREAT?.summaryScore?.value > 0.5 || false,
+        violence_graphic: scores.THREAT?.summaryScore?.value > 0.7 || false,
+        profanity: scores.PROFANITY?.summaryScore?.value > 0.5 || false,
+        insult: scores.INSULT?.summaryScore?.value > 0.5 || false,
+      };
+
+      const category_scores = {
+        hate: scores.IDENTITY_ATTACK?.summaryScore?.value || 0,
+        hate_threatening: scores.IDENTITY_ATTACK?.summaryScore?.value || 0,
+        self_harm: isSelfHarmThreat ? 0.95 : 0,  // Self-harm always scores high
+        sexual: 0,
+        sexual_minors: 0,
+        violence: scores.THREAT?.summaryScore?.value || 0,
+        violence_graphic: scores.THREAT?.summaryScore?.value || 0,
+        profanity: scores.PROFANITY?.summaryScore?.value || 0,
+        insult: scores.INSULT?.summaryScore?.value || 0,
+      };
 
       // Extract flagged categories
-      const flaggedCategories = Object.entries(result.categories)
+      const flaggedCategories = Object.entries(categories)
         .filter(([_, flagged]) => flagged)
         .map(([category]) => category);
 
-      // Determine severity based on categories
+      // Determine severity based on scores
       let severity: 'low' | 'medium' | 'high' = 'low';
-      if (flaggedCategories.some(cat =>
-        ['sexual_minors', 'self_harm', 'violence_graphic'].includes(cat)
-      )) {
+      const maxScore = Math.max(...Object.values(category_scores));
+      if (maxScore > 0.8) {
         severity = 'high';
-      } else if (flaggedCategories.some(cat =>
-        ['hate_threatening', 'sexual', 'violence'].includes(cat)
-      )) {
+      } else if (maxScore > 0.6) {
         severity = 'medium';
       }
 
       return {
-        isFlagged: result.flagged,
-        categories: result.categories as unknown as Record<string, boolean>,
-        category_scores: result.category_scores as unknown as Record<string, number>,
+        isFlagged: flaggedCategories.length > 0,
+        categories,
+        category_scores,
         flagged_categories: flaggedCategories,
         severity,
       };
@@ -79,6 +143,8 @@ class ModerationService {
           sexual_minors: false,
           violence: false,
           violence_graphic: false,
+          profanity: false,
+          insult: false,
         },
         category_scores: {
           hate: 0,
@@ -88,6 +154,8 @@ class ModerationService {
           sexual_minors: 0,
           violence: 0,
           violence_graphic: 0,
+          profanity: 0,
+          insult: 0,
         },
         flagged_categories: [],
         severity: 'low',
@@ -95,61 +163,31 @@ class ModerationService {
     }
   }
 
-  // Image moderation using OpenAI Vision API
+  // Image moderation - simplified for free tier (basic checks only)
   async moderateImage(imageUrl: string): Promise<ImageModerationResult> {
     try {
-      const response = await openai.chat.completions.create({
-        model: 'gpt-4o-mini',
-        messages: [
-          {
-            role: 'user',
-            content: [
-              {
-                type: 'text',
-                text: 'Analyze this image for inappropriate content. Check for: sexual content, violence, hate symbols, self-harm. Rate each category from 0-1 (0 being safe, 1 being highly inappropriate). Return only JSON with format: {"sexual": score, "violence": score, "hate": score, "self_harm": score}',
-              },
-              {
-                type: 'image_url',
-                image_url: { url: imageUrl },
-              },
-            ],
-          },
-        ],
-        max_tokens: 200,
-      });
+      // For free tier, we'll do basic checks without AI
+      // In production, you could integrate a free image moderation service
+      console.log(`Image moderation: checking ${imageUrl}`);
 
-      const content = response.choices[0]?.message?.content;
-      if (!content) {
-        throw new Error('No response from OpenAI');
-      }
-
-      const scores = JSON.parse(content);
-
-      // Determine flagged categories (threshold > 0.5)
-      const flaggedCategories = Object.entries(scores)
-        .filter(([_, score]) => (score as number) > 0.5)
-        .map(([category]) => category);
-
-      // Determine severity
-      let severity: 'low' | 'medium' | 'high' = 'low';
-      const maxScore = Math.max(...Object.values(scores) as number[]);
-      if (maxScore > 0.8) {
-        severity = 'high';
-      } else if (maxScore > 0.5) {
-        severity = 'medium';
-      }
-
+      // Basic URL validation and size checks could go here
+      // For now, return safe result since we don't have free image moderation
       return {
-        isFlagged: flaggedCategories.length > 0,
+        isFlagged: false,
         categories: {
-          sexual: scores.sexual > 0.5,
-          violence: scores.violence > 0.5,
-          hate: scores.hate > 0.5,
-          self_harm: scores.self_harm > 0.5,
+          sexual: false,
+          violence: false,
+          hate: false,
+          self_harm: false,
         },
-        category_scores: scores,
-        flagged_categories: flaggedCategories,
-        severity,
+        category_scores: {
+          sexual: 0,
+          violence: 0,
+          hate: 0,
+          self_harm: 0,
+        },
+        flagged_categories: [],
+        severity: 'low',
       };
     } catch (error) {
       console.error('Image moderation error:', error);

@@ -17,6 +17,8 @@ Object.defineProperty(exports, "__esModule", { value: true });
 __exportStar(require("./post.model"), exports);
 __exportStar(require("./comment.model"), exports);
 __exportStar(require("./like.model"), exports);
+__exportStar(require("./saved-post.model"), exports);
 __exportStar(require("./story.model"), exports);
 __exportStar(require("./message.model"), exports);
 __exportStar(require("./notification.model"), exports);
+__exportStar(require("./notification-preference.model"), exports);

@@ -10,4 +10,6 @@ router.use(auth_middleware_1.authenticate);
 router.get('/plans', subscriptions_controller_1.subscriptionsController.getPlans);
 // Get user subscription status
 router.get('/status', subscriptions_controller_1.subscriptionsController.getSubscriptionStatus);
+// Upgrade to premium (dev/mock)
+router.post('/upgrade', subscriptions_controller_1.subscriptionsController.upgrade);
 exports.default = router;

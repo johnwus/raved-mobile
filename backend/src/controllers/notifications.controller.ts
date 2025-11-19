@@ -1,8 +1,9 @@
 import { Request, Response } from 'express';
 import { PushNotificationService } from '../services/push-notification.service';
 import { Notification } from '../models/mongoose/notification.model';
-import { pgPool } from '../config/database';
+import { NotificationPreference } from '../models/mongoose/notification-preference.model';
 import { getAvatarUrl } from '../utils';
+import { pgPool } from '../config/database';
 
 export const notificationsController = {
   // Get user's notifications
@@ -11,72 +12,66 @@ export const notificationsController = {
       const userId = req.user.id;
       const page = parseInt(req.query.page as string) || 1;
       const limit = parseInt(req.query.limit as string) || 20;
-      const offset = (page - 1) * limit;
+      const skip = (page - 1) * limit;
 
-      // Get notifications from PostgreSQL
-      const notificationsResult = await pgPool.query(`
-        SELECT 
-          n.id,
-          n.type,
-          n.title,
-          n.message,
-          n.data,
-          n.actor_id,
-          n.is_read,
-          n.read_at,
-          n.created_at,
-          u.first_name,
-          u.last_name,
-          u.avatar_url,
-          u.username
-        FROM notifications n
-        LEFT JOIN users u ON n.actor_id = u.id
-        WHERE n.user_id = $1 AND n.deleted_at IS NULL
-        ORDER BY n.created_at DESC
-        LIMIT $2 OFFSET $3
-      `, [userId, limit, offset]);
+      // Get notifications from MongoDB (where they're actually created)
+      const notifications = await Notification.find({ userId })
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(limit)
+        .lean();
 
       // Get total count
-      const countResult = await pgPool.query(`
-        SELECT COUNT(*) as total
-        FROM notifications
-        WHERE user_id = $1 AND deleted_at IS NULL
-      `, [userId]);
+      const total = await Notification.countDocuments({ userId });
 
       // Get unread count
-      const unreadResult = await pgPool.query(`
-        SELECT COUNT(*) as unread
-        FROM notifications
-        WHERE user_id = $1 AND is_read = false AND deleted_at IS NULL
-      `, [userId]);
+      const unreadCount = await Notification.countDocuments({ userId, isRead: false });
 
-      const notifications = notificationsResult.rows.map(row => ({
-        id: row.id,
-        type: row.type,
-        title: row.title,
-        message: row.message,
-        user: row.actor_id ? {
-          id: row.actor_id,
-          name: `${row.first_name} ${row.last_name}`,
-          avatar: getAvatarUrl(row.avatar_url, row.actor_id),
-        } : undefined,
-        postId: row.data?.postId,
-        itemId: row.data?.itemId,
-        eventId: row.data?.eventId,
-        isRead: row.is_read,
-        readAt: row.read_at,
-        createdAt: row.created_at,
-        data: row.data,
-      }));
+      const formattedNotifications = notifications.map((notif: any) => {
+        // Build user object if actorName is available
+        const user = notif.actorName ? {
+          id: notif.actorId,
+          name: notif.actorName,
+          avatar: notif.actorAvatar || 'https://api.raved.com/default-avatar.png'
+        } : undefined;
+
+        // Build rich message based on notification type
+        let enrichedMessage = notif.message;
+        if (notif.data) {
+          // Enhance message with item details if available
+          if (notif.data.itemTitle) {
+            enrichedMessage = `${notif.message} "${notif.data.itemTitle}"`;
+          }
+          if (notif.data.postTitle && !enrichedMessage.includes('post')) {
+            enrichedMessage = `${notif.message}: "${notif.data.postTitle}"`;
+          }
+        }
+
+        return {
+          id: notif._id,
+          type: notif.type,
+          title: notif.title,
+          message: enrichedMessage,
+          user,
+          isRead: notif.isRead,
+          readAt: notif.readAt,
+          createdAt: notif.createdAt,
+          postId: notif.referenceType === 'post' ? notif.referenceId : (notif.data?.postId || undefined),
+          itemId: notif.referenceType === 'item' ? notif.referenceId : (notif.data?.itemId || undefined),
+          eventId: notif.referenceType === 'event' ? notif.referenceId : (notif.data?.eventId || undefined),
+          commentId: notif.referenceType === 'comment' ? notif.referenceId : (notif.data?.commentId || undefined),
+          data: notif.data,
+        };
+      });
 
       res.json({
-        notifications,
-        unreadCount: parseInt(unreadResult.rows[0].unread),
+        notifications: formattedNotifications,
+        unreadCount,
         pagination: {
-          total: parseInt(countResult.rows[0].total),
+          total,
           page,
           limit,
-          hasMore: offset + limit < parseInt(countResult.rows[0].total),
+          hasMore: skip + limit < total,
         },
       });
     } catch (error) {
@@ -85,22 +80,55 @@ export const notificationsController = {
     }
   },
 
-  // Mark notification as read
+  // Mark notification as read (legacy - kept for compatibility)
   markAsRead: async (req: Request, res: Response) => {
     try {
       const userId = req.user.id;
       const { notificationId } = req.params;
 
-      await pgPool.query(`
-        UPDATE notifications
-        SET is_read = true, read_at = CURRENT_TIMESTAMP
-        WHERE id = $1 AND user_id = $2
-      `, [notificationId, userId]);
+      const result = await Notification.findByIdAndUpdate(
+        notificationId,
+        { isRead: true, readAt: new Date() },
+        { new: true }
+      );
 
-      res.json({ success: true });
+      if (!result) {
+        return res.status(404).json({ success: false, error: 'Notification not found' });
+      }
+
+      // Verify notification belongs to user for security
+      if (result.userId !== userId) {
+        return res.status(403).json({ success: false, error: 'Unauthorized' });
+      }
+
+      res.json({ success: true, notification: result });
     } catch (error) {
       console.error('Mark Notification as Read Error:', error);
       res.status(500).json({ error: 'Failed to mark notification as read' });
+    }
+  },
+
+  // Delete notification (when user interacts with it)
+  deleteNotification: async (req: Request, res: Response) => {
+    try {
+      const userId = req.user.id;
+      const { notificationId } = req.params;
+
+      const result = await Notification.findByIdAndDelete(notificationId);
+
+      if (!result) {
+        return res.status(404).json({ success: false, error: 'Notification not found' });
+      }
+
+      // Verify notification belongs to user for security
+      if (result.userId !== userId) {
+        return res.status(403).json({ success: false, error: 'Unauthorized' });
+      }
+
+      res.json({ success: true, deletedId: notificationId });
+    } catch (error) {
+      console.error('Delete Notification Error:', error);
+      res.status(500).json({ error: 'Failed to delete notification' });
     }
   },
 
@@ -109,18 +137,54 @@ export const notificationsController = {
     try {
       const userId = req.user.id;
 
-      await pgPool.query(`
-        UPDATE notifications
-        SET is_read = true, read_at = CURRENT_TIMESTAMP
-        WHERE user_id = $1 AND is_read = false AND deleted_at IS NULL
-      `, [userId]);
+      const result = await Notification.updateMany(
+        { userId, isRead: false },
+        { isRead: true, readAt: new Date() }
+      );
 
-      res.json({ success: true });
+      res.json({ success: true, modifiedCount: result.modifiedCount });
     } catch (error) {
       console.error('Mark All Notifications as Read Error:', error);
       res.status(500).json({ error: 'Failed to mark all notifications as read' });
     }
   },
+
+  // Delete all notifications (when user clears all)
+  deleteAllNotifications: async (req: Request, res: Response) => {
+    try {
+      const userId = req.user.id;
+
+      const result = await Notification.deleteMany({ userId });
+
+      res.json({ success: true, deletedCount: result.deletedCount });
+    } catch (error) {
+      console.error('Delete All Notifications Error:', error);
+      res.status(500).json({ error: 'Failed to delete all notifications' });
+    }
+  },
+
+  // Delete read notifications (for cleanup)
+  deleteReadNotifications: async (req: Request, res: Response) => {
+    try {
+      const userId = req.user.id;
+      const daysOld = parseInt(req.query.daysOld as string) || 7; // Delete read notifications older than 7 days
+
+      const cutoffDate = new Date();
+      cutoffDate.setDate(cutoffDate.getDate() - daysOld);
+
+      const result = await Notification.deleteMany({
+        userId,
+        isRead: true,
+        readAt: { $lt: cutoffDate }
+      });
+
+      res.json({ success: true, deletedCount: result.deletedCount });
+    } catch (error) {
+      console.error('Delete Read Notifications Error:', error);
+      res.status(500).json({ error: 'Failed to delete read notifications' });
+    }
+  },
+
   // Send test notification to user
   sendTestNotification: async (req: Request, res: Response) => {
     try {
@@ -204,25 +268,42 @@ export const notificationsController = {
     try {
       const userId = req.user.id;
 
-      // For now, return default preferences
-      // In a real implementation, you'd fetch from database
-      const preferences = {
-        pushEnabled: true,
-        likes: true,
-        comments: true,
-        follows: true,
-        mentions: true,
-        messages: true,
-        events: true,
-        sales: true,
-        marketing: false,
-        soundEnabled: true,
-        vibrationEnabled: true,
-      };
+      // Try to get preferences from MongoDB
+      let preferences = await NotificationPreference.findOne({ userId });
+
+      // If not found, create default preferences
+      if (!preferences) {
+        preferences = await NotificationPreference.create({
+          userId,
+          pushEnabled: true,
+          likes: true,
+          comments: true,
+          follows: true,
+          mentions: true,
+          messages: true,
+          events: true,
+          sales: true,
+          marketing: false,
+          soundEnabled: true,
+          vibrationEnabled: true,
+        });
+      }
 
       res.json({
         success: true,
-        preferences
+        preferences: {
+          pushEnabled: preferences.pushEnabled,
+          likes: preferences.likes,
+          comments: preferences.comments,
+          follows: preferences.follows,
+          mentions: preferences.mentions,
+          messages: preferences.messages,
+          events: preferences.events,
+          sales: preferences.sales,
+          marketing: preferences.marketing,
+          soundEnabled: preferences.soundEnabled,
+          vibrationEnabled: preferences.vibrationEnabled,
+        }
       });
 
     } catch (error) {
@@ -235,43 +316,148 @@ export const notificationsController = {
   updateNotificationPreferences: async (req: Request, res: Response) => {
     try {
       const userId = req.user.id;
-      const { preferences } = req.body;
+      let preferences;
+
+      console.log('📝 Raw request body:', req.body);
+
+      // Check if preferences are sent directly in body or wrapped in preferences key
+      if (req.body.preferences !== undefined) {
+        preferences = req.body.preferences;
+        console.log('📝 Preferences from req.body.preferences:', preferences, 'type:', typeof preferences);
+      } else {
+        // Check if the body itself is the preferences object
+        const bodyKeys = Object.keys(req.body);
+        const preferenceKeys = ['pushEnabled', 'likes', 'comments', 'follows', 'mentions', 'messages', 'events', 'sales', 'marketing', 'soundEnabled', 'vibrationEnabled'];
+        const hasPreferenceKeys = preferenceKeys.some(key => bodyKeys.includes(key));
+
+        if (hasPreferenceKeys && typeof req.body === 'object') {
+          preferences = req.body;
+          console.log('📝 Preferences from req.body directly:', preferences, 'type:', typeof preferences);
+        } else {
+          preferences = req.body.preferences;
+          console.log('📝 Preferences fallback:', preferences, 'type:', typeof preferences);
+        }
+      }
+
+      // Handle if preferences is stringified
+      if (typeof preferences === 'string') {
+        console.log('⚠️  Preferences is a string, attempting to parse');
+        try {
+          preferences = JSON.parse(preferences);
+        } catch (e) {
+          console.error('❌ Failed to parse preferences string:', e);
+          return res.status(400).json({
+            success: false,
+            error: 'Preferences must be a valid object'
+          });
+        }
+      }
 
       if (!preferences || typeof preferences !== 'object') {
+        console.error('❌ Preferences validation failed:', { preferences, type: typeof preferences });
         return res.status(400).json({
+          success: false,
           error: 'Preferences object is required'
         });
       }
 
-      // In a real implementation, you'd save to database
-      // For now, just validate and return success
+      // Valid preference keys
       const validKeys = [
         'pushEnabled', 'likes', 'comments', 'follows', 'mentions',
         'messages', 'events', 'sales', 'marketing', 'soundEnabled', 'vibrationEnabled'
       ];
 
-      const filteredPreferences: any = {};
+      // Create update object with only valid keys and boolean values (or string representations)
+      const updateData: any = {};
       for (const key of validKeys) {
-        if (typeof preferences[key] === 'boolean') {
-          filteredPreferences[key] = preferences[key];
+        if (key in preferences) {
+          const value = preferences[key];
+          // Accept boolean values or string representations of booleans
+          if (typeof value === 'boolean') {
+            updateData[key] = value;
+          } else if (typeof value === 'string') {
+            if (value === 'true') {
+              updateData[key] = true;
+            } else if (value === 'false') {
+              updateData[key] = false;
+            }
+            // Ignore other string values
+          }
         }
       }
+
+      console.log('🔄 Update data:', updateData);
+
+      if (Object.keys(updateData).length === 0) {
+        return res.status(400).json({
+          success: false,
+          error: 'No valid boolean preferences provided'
+        });
+      }
+
+      // Update or create preferences
+      const updatedPreferences = await NotificationPreference.findOneAndUpdate(
+        { userId },
+        updateData,
+        { new: true, upsert: true }
+      );
+
+      console.log('✅ Preferences updated:', updatedPreferences);
 
       res.json({
         success: true,
         message: 'Notification preferences updated successfully',
-        preferences: filteredPreferences
+        preferences: {
+          pushEnabled: updatedPreferences.pushEnabled,
+          likes: updatedPreferences.likes,
+          comments: updatedPreferences.comments,
+          follows: updatedPreferences.follows,
+          mentions: updatedPreferences.mentions,
+          messages: updatedPreferences.messages,
+          events: updatedPreferences.events,
+          sales: updatedPreferences.sales,
+          marketing: updatedPreferences.marketing,
+          soundEnabled: updatedPreferences.soundEnabled,
+          vibrationEnabled: updatedPreferences.vibrationEnabled,
+        }
       });
 
     } catch (error) {
-      console.error('Update Notification Preferences Error:', error);
-      res.status(500).json({ error: 'Failed to update notification preferences' });
+      console.error('❌ Update Notification Preferences Error:', error);
+      res.status(500).json({
+        success: false,
+        error: 'Failed to update notification preferences',
+        details: error instanceof Error ? error.message : String(error)
+      });
     }
   },
 
   // Create notification
   createNotification: async (userId: string, type: string, title: string, message: string, actorId?: string, data?: any): Promise<any> => {
     try {
+      let actorName: string | undefined;
+      let actorAvatar: string | undefined;
+
+      // Fetch actor information if actorId is provided
+      if (actorId) {
+        try {
+          const actorResult = await pgPool.query(`
+            SELECT first_name, last_name, avatar_url
+            FROM users
+            WHERE id = $1 AND deleted_at IS NULL
+          `, [actorId]);
+
+          if (actorResult.rows.length > 0) {
+            const actor = actorResult.rows[0];
+            actorName = `${actor.first_name} ${actor.last_name}`.trim();
+            actorAvatar = getAvatarUrl(actor.avatar_url, actorId);
+          }
+        } catch (error) {
+          console.warn('Failed to fetch actor info:', error);
+          // Continue without actor info
+        }
+      }
+
       // Create notification record in database
       const notification = await Notification.create({
         userId,
@@ -279,6 +465,8 @@ export const notificationsController = {
         title,
         message,
         actorId,
+        actorName,
+        actorAvatar,
         data
       });
 

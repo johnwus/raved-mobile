@@ -60,13 +60,16 @@ exports.connectionsController = {
                     });
                 }
             }
+            // Get total counts
+            const followingCountResult = await database_1.pgPool.query('SELECT COUNT(*) as count FROM connections WHERE follower_id = $1 AND status = $2', [userId, 'accepted']);
+            const followersCountResult = await database_1.pgPool.query('SELECT COUNT(*) as count FROM connections WHERE following_id = $1 AND status = $2', [userId, 'accepted']);
             res.json({
                 success: true,
                 connections: {
                     following,
                     followers,
-                    followingCount: following.length,
-                    followersCount: followers.length
+                    followingCount: parseInt(followingCountResult.rows[0].count),
+                    followersCount: parseInt(followersCountResult.rows[0].count)
                 }
             });
         }

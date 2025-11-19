@@ -37,8 +37,13 @@ const likePost = async (postId, userId, userSubscription, io) => {
                 const userResult = await database_1.pgPool.query('SELECT first_name, last_name FROM users WHERE id = $1', [userId]);
                 const user = userResult.rows[0];
                 const actorName = `${user.first_name} ${user.last_name}`;
-                // Create notification using the controller
-                await notifications_controller_1.notificationsController.createNotification(post.userId, 'like', 'New Like', `${actorName} liked your post`, userId, { postId, type: 'post' });
+                const postTitle = post.caption?.substring(0, 100) || 'your post';
+                // Create notification using the controller with enriched data
+                await notifications_controller_1.notificationsController.createNotification(post.userId, 'like', 'New Like', `${actorName} liked your post`, userId, {
+                    postId,
+                    type: 'post',
+                    postTitle
+                });
                 if (userSubscription === 'premium') {
                     // await updateUserScore(post.userId, 'like');
                 }

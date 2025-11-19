@@ -190,7 +190,7 @@ const getActiveOverrides = async (req, res) => {
 };
 exports.getActiveOverrides = getActiveOverrides;
 /**
- * Reset rate limit for a specific key (Admin only)
+ * Reset rate limit for a specific keys (Admin only)
  */
 const resetRateLimit = async (req, res) => {
     try {

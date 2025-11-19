@@ -52,15 +52,28 @@ router.post('/register', [
 ], registerUser);
 
 // Login
-router.post('/login', [
+if (process.env.NODE_ENV === 'development') {
+  router.post('/login', [
     body('identifier').notEmpty().withMessage('Identifier is required'),
     body('password').notEmpty().withMessage('Password is required'),
-], login);
+  ], login);
+} else {
+  router.post('/login', [
+    body('identifier').notEmpty().withMessage('Identifier is required'),
+    body('password').notEmpty().withMessage('Password is required'),
+  ], authRateLimit, login);
+}
 
 // Refresh token
-router.post('/refresh', [
+if (process.env.NODE_ENV === 'development') {
+  router.post('/refresh', [
     body('refreshToken').notEmpty().withMessage('Refresh token is required'),
-], refresh);
+  ], refresh);
+} else {
+  router.post('/refresh', [
+    body('refreshToken').notEmpty().withMessage('Refresh token is required'),
+  ], authRateLimit, refresh);
+}
 
 // Email Verification (with rate limiting)
 router.post('/send-verification-email', authenticate, authRateLimit, sendEmailVerification);

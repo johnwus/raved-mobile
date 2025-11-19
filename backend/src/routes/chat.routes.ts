@@ -3,6 +3,7 @@ import { body } from 'express-validator';
 import { authenticate } from '../middleware/auth.middleware';
 import { moderateMessage } from '../middleware/moderation.middleware';
 import { chatService } from '../services/chat.service';
+import { io } from '../index';
 
 const router = Router();
 
@@ -59,6 +60,33 @@ router.post('/:chatId/messages', authenticate, moderateMessage, [
 
     const message = await chatService.sendMessage(chatId, userId, content, type);
 
+    // Emit real-time message to chat room so connected clients receive it immediately
+    try {
+      io.to(`chat:${chatId}`).emit('new_message', {
+        ...message,
+        timestamp: new Date()
+      });
+
+      // Also notify the recipient's user room so their conversation list / unread badge can update
+      try {
+        const receiverId = (message as any).receiverId;
+        if (receiverId) {
+          const { getTimeAgo } = await import('../utils');
+          io.to(`user:${receiverId}`).emit('conversation_updated', {
+            conversationId: chatId,
+            lastMessage: message.content,
+            lastMessageAt: message.createdAt,
+            timeAgo: getTimeAgo(message.createdAt),
+            incrementUnread: true
+          });
+        }
+      } catch (userEmitError) {
+        console.warn('Failed to emit conversation_updated to receiver:', userEmitError);
+      }
+    } catch (emitError) {
+      console.warn('Failed to emit new_message via socket:', emitError);
+    }
+
     res.json({
       success: true,
       message
@@ -74,8 +102,8 @@ router.get('/:chatId/messages', authenticate, async (req: Request, res: Response
   try {
     const { chatId } = req.params;
     const userId = req.user.id;
-    const page = parseInt(req.query.page as string) || 1;
-    const limit = parseInt(req.query.limit as string) || 50;
+    const page = Number.parseInt(req.query.page as string) || 1;
+    const limit = Number.parseInt(req.query.limit as string) || 50;
 
     const result = await chatService.getConversationMessages(chatId, userId, page, limit);
 

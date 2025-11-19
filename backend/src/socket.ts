@@ -20,6 +20,9 @@ export const createSocketServer = (app: express.Application) => {
         }
     });
 
+    // Track online users in memory
+    const onlineUsers = new Map<string, { userId: string; username: string; timestamp: Date }>();
+
     // Authentication middleware
     io.use(async (socket: AuthenticatedSocket, next) => {
         try {
@@ -61,87 +64,124 @@ export const createSocketServer = (app: express.Application) => {
 
     // Connection handling
     io.on('connection', (socket: AuthenticatedSocket) => {
-        console.log(`User ${socket.username} (${socket.userId}) connected`);
+      console.log(`User ${socket.username} (${socket.userId}) connected`);
 
-        // Join user-specific room
-        socket.join(`user:${socket.userId}`);
+      // Join user-specific room
+      socket.join(`user:${socket.userId}`);
 
-        // Handle joining chat rooms
-        socket.on('join_chat', (chatId: string) => {
-            socket.join(`chat:${chatId}`);
-            console.log(`User ${socket.username} joined chat ${chatId}`);
+      // Track this user as online
+      onlineUsers.set(socket.userId!, {
+        userId: socket.userId!,
+        username: socket.username!,
+        timestamp: new Date()
+      });
+
+      // Send list of all currently online users to the connecting client
+      const usersList = Array.from(onlineUsers.values());
+      console.log(`Emitting users_online_list to ${socket.username}: ${JSON.stringify(usersList)}`);
+      socket.emit('users_online_list', usersList);
+
+      // Broadcast this user coming online to all other clients
+      const onlineEvent = {
+        userId: socket.userId,
+        username: socket.username,
+        timestamp: new Date()
+      };
+      console.log(`Broadcasting user_online: ${JSON.stringify(onlineEvent)}`);
+      socket.broadcast.emit('user_online', onlineEvent);
+
+      // Handle joining chat rooms
+      socket.on('join_chat', (chatId: string) => {
+        socket.join(`chat:${chatId}`);
+        console.log(`User ${socket.username} joined chat ${chatId}`);
+      });
+
+      // Handle leaving chat rooms
+      socket.on('leave_chat', (chatId: string) => {
+        socket.leave(`chat:${chatId}`);
+        console.log(`User ${socket.username} left chat ${chatId}`);
+      });
+
+      // Handle real-time messaging
+      socket.on('send_message', async (data: { chatId: string; content: string; type?: string }) => {
+        try {
+          const { chatService } = await import('./services/chat.service');
+
+          // Save message to database
+          const message = await chatService.sendMessage(data.chatId, socket.userId!, data.content, data.type || 'text');
+
+          // Emit to all users in the chat room
+          console.log(`[SOCKET] Emitting new_message to chat:${data.chatId}`, {
+            messageId: message.id,
+            conversationId: message.conversationId,
+            senderId: message.sender?.id,
+            content: message.content?.substring(0, 50)
+          });
+          io.to(`chat:${data.chatId}`).emit('new_message', {
+            ...message,
+            senderUsername: socket.username,
+            timestamp: new Date()
+          });
+        } catch (error) {
+          console.error('Send message error:', error);
+          socket.emit('message_error', { error: 'Failed to send message' });
+        }
+      });
+
+      // Handle typing indicators
+      socket.on('typing_start', (chatId: string) => {
+        socket.to(`chat:${chatId}`).emit('user_typing', {
+          userId: socket.userId,
+          username: socket.username,
+          chatId
         });
+      });
 
-        // Handle leaving chat rooms
-        socket.on('leave_chat', (chatId: string) => {
-            socket.leave(`chat:${chatId}`);
-            console.log(`User ${socket.username} left chat ${chatId}`);
+      socket.on('typing_stop', (chatId: string) => {
+        socket.to(`chat:${chatId}`).emit('user_stopped_typing', {
+          userId: socket.userId,
+          username: socket.username,
+          chatId
         });
+      });
 
-        // Handle real-time messaging
-        socket.on('send_message', async (data: { chatId: string; content: string; type?: string }) => {
-            try {
-                const { chatService } = await import('./services/chat.service');
+      // Handle notifications
+      socket.on('mark_notification_read', async (notificationId: string) => {
+        try {
+          const { pgPool } = await import('./config/database');
 
-                // Save message to database
-                const message = await chatService.sendMessage(data.chatId, socket.userId!, data.content, data.type || 'text');
+          // Mark notification as read in database
+          const result = await pgPool.query(
+            'UPDATE notifications SET is_read = true, updated_at = CURRENT_TIMESTAMP WHERE id = $1 AND user_id = $2 RETURNING *',
+            [notificationId, socket.userId]
+          );
 
-                // Emit to all users in the chat room
-                io.to(`chat:${data.chatId}`).emit('new_message', {
-                    ...message,
-                    senderUsername: socket.username,
-                    timestamp: new Date()
-                });
-            } catch (error) {
-                console.error('Send message error:', error);
-                socket.emit('message_error', { error: 'Failed to send message' });
-            }
-        });
+          if (result.rows.length > 0) {
+            socket.emit('notification_updated', { notificationId, read: true });
+          } else {
+            socket.emit('notification_error', { error: 'Notification not found' });
+          }
+        } catch (error) {
+          console.error('Mark notification read error:', error);
+          socket.emit('notification_error', { error: 'Failed to mark notification as read' });
+        }
+      });
 
-        // Handle typing indicators
-        socket.on('typing_start', (chatId: string) => {
-            socket.to(`chat:${chatId}`).emit('user_typing', {
-                userId: socket.userId,
-                username: socket.username,
-                chatId
-            });
-        });
-
-        socket.on('typing_stop', (chatId: string) => {
-            socket.to(`chat:${chatId}`).emit('user_stopped_typing', {
-                userId: socket.userId,
-                username: socket.username,
-                chatId
-            });
-        });
-
-        // Handle notifications
-        socket.on('mark_notification_read', async (notificationId: string) => {
-            try {
-                const { pgPool } = await import('./config/database');
-
-                // Mark notification as read in database
-                const result = await pgPool.query(
-                    'UPDATE notifications SET is_read = true, updated_at = CURRENT_TIMESTAMP WHERE id = $1 AND user_id = $2 RETURNING *',
-                    [notificationId, socket.userId]
-                );
-
-                if (result.rows.length > 0) {
-                    socket.emit('notification_updated', { notificationId, read: true });
-                } else {
-                    socket.emit('notification_error', { error: 'Notification not found' });
-                }
-            } catch (error) {
-                console.error('Mark notification read error:', error);
-                socket.emit('notification_error', { error: 'Failed to mark notification as read' });
-            }
-        });
-
-        // Handle disconnection
-        socket.on('disconnect', () => {
-            console.log(`User ${socket.username} (${socket.userId}) disconnected`);
-        });
-    });
-
-    return { httpServer, io };
+      // Handle disconnection
+      socket.on('disconnect', () => {
+        console.log(`User ${socket.username} (${socket.userId}) disconnected`);
+        
+        // Remove user from online tracking
+        onlineUsers.delete(socket.userId!);
+        
+        // Broadcast user going offline to all clients
+        const offlineEvent = {
+          userId: socket.userId,
+          username: socket.username,
+          timestamp: new Date()
+        };
+        console.log(`Broadcasting user_offline: ${JSON.stringify(offlineEvent)}`);
+        io.emit('user_offline', offlineEvent);
+      });
+    });    return { httpServer, io };
 };

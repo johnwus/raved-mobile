@@ -2,17 +2,19 @@ import axios from 'axios';
 import { Storage } from './storage';
 
 // For React Native development:
-// - iOS Simulator: use 'http://localhost:3000'
-// - Android Emulator: use 'http://10.0.2.2:3000'
-// - Physical Device: use your computer's IP address (e.g., 'http://192.168.1.100:3000')
+// - iOS Simulator: use 'http://localhost:3000/api/v1'
+// - Android Emulator: use 'http://10.0.2.2:3000/api/v1'
+// - Physical Device: use your computer's IP address (e.g., 'http://192.168.1.100:3000/api/v1')
 // You can set EXPO_PUBLIC_API_URL environment variable to override this
-const API_BASE_URL = __DEV__
-  ? (process.env.EXPO_PUBLIC_API_URL || 'http://localhost:3000') + '/api/v1'
-  : 'https://api.raved.com/api/v1'; // Production URL with API version
+const SERVER_BASE_URL = __DEV__
+  ? (process.env.EXPO_PUBLIC_API_URL || 'http://192.168.100.28:3000') //'http://10.187.133.169:3000') 
+  : 'https://api.raved.com'; // Server base URL without API version
+
+const API_BASE_URL = SERVER_BASE_URL + '/api/v1'; // API base URL with version
 
 const api = axios.create({
   baseURL: API_BASE_URL,
-  timeout: 10000,
+  timeout: 30000, // Increased to 30 seconds to handle slow feed queries
   headers: {
     'Content-Type': 'application/json',
   },
@@ -25,6 +27,7 @@ api.interceptors.request.use(
     if (token) {
       config.headers.Authorization = `Bearer ${token}`;
     }
+
     return config;
   },
   (error) => {
@@ -44,7 +47,7 @@ api.interceptors.response.use(
       try {
         const refreshToken = await Storage.get<string>('refreshToken', '');
         if (refreshToken) {
-          const response = await axios.post(`${API_BASE_URL}/auth/refresh`, {
+          const response = await axios.post(`${SERVER_BASE_URL}/api/v1/auth/refresh`, {
             refreshToken,
           });
 
@@ -54,7 +57,7 @@ api.interceptors.response.use(
           originalRequest.headers.Authorization = `Bearer ${token}`;
           return api(originalRequest);
         }
-      } catch (refreshError) {
+      } catch {
         // Refresh failed, logout user
         await Storage.remove('authToken');
         await Storage.remove('refreshToken');

@@ -14,7 +14,7 @@ const moderatePost = async (req, res, next) => {
         const content = caption || '';
         const mediaUrls = media || [];
         // Generate a temporary content ID for moderation
-        const contentId = `temp_post_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+        const contentId = `temp_post_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
         const moderationResult = await moderation_queue_service_1.moderationQueueService.processContent(contentId, 'post', userId, content, mediaUrls);
         // Attach moderation result to request
         req.moderationResult = moderationResult;
@@ -48,7 +48,7 @@ const moderateComment = async (req, res, next) => {
             return next();
         }
         // Generate a temporary content ID for moderation
-        const contentId = `temp_comment_${postId}_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+        const contentId = `temp_comment_${postId}_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
         const moderationResult = await moderation_queue_service_1.moderationQueueService.processContent(contentId, 'comment', userId, text);
         // Attach moderation result to request
         req.moderationResult = moderationResult;
@@ -66,7 +66,8 @@ const moderateComment = async (req, res, next) => {
     }
     catch (error) {
         console.error('Comment moderation error:', error);
-        // On moderation failure, allow content but log the error
+        // On moderation failure (like OpenAI API keys issues), allow content but log the error
+        // This prevents blocking legitimate comments when external services are down
         next();
     }
 };
@@ -81,7 +82,7 @@ const moderateMessage = async (req, res, next) => {
             return next();
         }
         // Generate a temporary content ID for moderation
-        const contentId = `temp_message_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+        const contentId = `temp_message_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
         const mediaUrls = mediaUrl ? [mediaUrl] : undefined;
         const moderationResult = await moderation_queue_service_1.moderationQueueService.processContent(contentId, 'message', userId, content, mediaUrls);
         // Attach moderation result to request
@@ -127,7 +128,7 @@ const moderateStory = async (req, res, next) => {
             return next();
         }
         // Generate a temporary content ID for moderation
-        const contentId = `temp_story_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+        const contentId = `temp_story_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
         const moderationResult = await moderation_queue_service_1.moderationQueueService.processContent(contentId, 'story', userId, contentText, mediaUrls.length > 0 ? mediaUrls : undefined);
         // Attach moderation result to request
         req.moderationResult = moderationResult;

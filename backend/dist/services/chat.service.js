@@ -32,6 +32,7 @@ exports.chatService = {
         c.id,
         c.created_at,
         c.last_message_at,
+        c.last_message_content,
         CASE
           WHEN c.participant1_id = $1 THEN c.participant2_id
           ELSE c.participant1_id
@@ -40,9 +41,7 @@ exports.chatService = {
         u.first_name,
         u.last_name,
         u.avatar_url,
-        COALESCE(c.unread_count1, 0) as unread_count,
-        m.content as last_message,
-        m.created_at as last_message_time
+        COALESCE(c.unread_count1, 0) as unread_count
       FROM conversations c
       JOIN users u ON (
         CASE
@@ -50,7 +49,6 @@ exports.chatService = {
           ELSE c.participant1_id = u.id
         END
       )
-      LEFT JOIN messages m ON c.last_message_id::uuid = m.id
       WHERE (c.participant1_id = $1 OR c.participant2_id = $1)
         AND c.deleted_at IS NULL
       ORDER BY c.last_message_at DESC NULLS LAST, c.created_at DESC
@@ -63,10 +61,10 @@ exports.chatService = {
                 name: `${conv.first_name} ${conv.last_name}`,
                 avatarUrl: (0, utils_1.getAvatarUrl)(conv.avatar_url, conv.other_participant_id)
             },
-            lastMessage: conv.last_message ? {
-                content: conv.last_message,
-                timeAgo: (0, utils_1.getTimeAgo)(conv.last_message_time),
-                createdAt: conv.last_message_time
+            lastMessage: conv.last_message_content ? {
+                content: conv.last_message_content,
+                timeAgo: (0, utils_1.getTimeAgo)(conv.last_message_at),
+                createdAt: conv.last_message_at
             } : null,
             unreadCount: parseInt(conv.unread_count),
             createdAt: conv.created_at,
@@ -109,6 +107,10 @@ exports.chatService = {
     },
     // Send message
     async sendMessage(conversationId, senderId, content, type = 'text') {
+        // Basic validation to ensure correct types are sent to the DB
+        if (typeof conversationId !== 'string' || typeof senderId !== 'string' || typeof content !== 'string') {
+            throw new Error('Invalid parameters for sendMessage');
+        }
         // Verify user is participant
         const convCheck = await database_1.pgPool.query(`
       SELECT * FROM conversations
@@ -134,14 +136,18 @@ exports.chatService = {
         const receiverId = convCheck.rows[0].participant1_id === senderId
             ? convCheck.rows[0].participant2_id
             : convCheck.rows[0].participant1_id;
+        // Update conversation last message. Use only the parameters referenced in the query
+        // to avoid ambiguous parameter type errors (Postgres requires each unused parameter
+        // in a prepared statement to have a determinable type).
+        // Use explicit casts so Postgres can infer parameter types and avoid ambiguous prepared statement errors
         await database_1.pgPool.query(`
       UPDATE conversations
-      SET last_message_id = $1,
+      SET last_message_content = $1::text,
           last_message_at = CURRENT_TIMESTAMP,
-          unread_count2 = CASE WHEN participant1_id = $3 THEN unread_count2 + 1 ELSE unread_count2 END,
-          unread_count1 = CASE WHEN participant2_id = $3 THEN unread_count1 + 1 ELSE unread_count1 END
-      WHERE id = $2
-    `, [message._id.toString(), conversationId, receiverId]);
+          unread_count2 = CASE WHEN participant1_id = $3::uuid THEN unread_count2 + 1 ELSE unread_count2 END,
+          unread_count1 = CASE WHEN participant2_id = $3::uuid THEN unread_count1 + 1 ELSE unread_count1 END
+      WHERE id = $2::uuid
+    `, [content, conversationId, receiverId]);
         // Send push notification for new message
         try {
             // Get sender details for notification
@@ -154,10 +160,19 @@ exports.chatService = {
         catch (notificationError) {
             console.warn('Failed to send message notification:', notificationError);
         }
+        // Get sender details
+        const senderResult = await database_1.pgPool.query('SELECT id, username, first_name, last_name, avatar_url FROM users WHERE id = $1', [senderId]);
+        const sender = senderResult.rows[0];
         return {
-            id: message._id,
+            id: message._id.toString(),
             conversationId,
-            senderId,
+            receiverId,
+            sender: {
+                id: sender.id,
+                username: sender.username,
+                name: `${sender.first_name} ${sender.last_name}`,
+                avatar: (0, utils_1.getAvatarUrl)(sender.avatar_url, sender.id)
+            },
             content,
             type,
             isRead: message.isRead,

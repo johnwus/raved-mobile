@@ -6,7 +6,7 @@ const rate_limit_analytics_service_1 = require("../services/rate-limit-analytics
 const createRateLimitMiddleware = (options = {}) => {
     return async (req, res, next) => {
         try {
-            // Determine the key for rate limiting
+            // Determine the keys for rate limiting
             const key = options.customKey
                 ? options.customKey(req)
                 : req.user?.id || req.ip || 'anonymous';

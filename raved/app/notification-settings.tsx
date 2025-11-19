@@ -13,6 +13,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { theme } from '../theme';
 import { useAuth } from '../hooks/useAuth';
 import api from '../services/api';
+import { Storage } from '../services/storage';
 
 interface NotificationPreferences {
   pushEnabled: boolean;
@@ -52,31 +53,62 @@ export default function NotificationSettingsScreen() {
     loadPreferences();
   }, []);
 
+  // Save preferences to cache when component unmounts (user closes page)
+  useEffect(() => {
+    return () => {
+      Storage.set('notificationPreferences', preferences).catch(error => {
+        console.error('Error saving preferences to cache on unmount:', error);
+      });
+    };
+  }, [preferences]);
+
   const loadPreferences = async () => {
     try {
-      const response = await api.get('/users/notification-preferences');
+      // Load from cache first for immediate UI
+      const cachedPreferences = await Storage.get<NotificationPreferences | null>('notificationPreferences', null);
+      if (cachedPreferences) {
+        setPreferences({ ...defaultPreferences, ...cachedPreferences });
+      } else {
+        // If no cache, use defaults immediately
+        setPreferences(defaultPreferences);
+      }
+
+      // Then fetch from server in background and update cache
+      const response = await api.get('/notifications/preferences');
       if (response.data.preferences) {
-        setPreferences({ ...defaultPreferences, ...response.data.preferences });
+        const serverPreferences = { ...defaultPreferences, ...response.data.preferences };
+        setPreferences(serverPreferences);
+        // Update cache with server data
+        await Storage.set('notificationPreferences', serverPreferences);
       }
     } catch (error) {
       console.error('Error loading notification preferences:', error);
-      // Use defaults if API fails
+      // If both cache and server fail, ensure we have defaults
+      const cachedPrefs = await Storage.get<NotificationPreferences | null>('notificationPreferences', null);
+      if (!cachedPrefs) {
+        setPreferences(defaultPreferences);
+      }
     }
   };
 
   const updatePreference = async (key: keyof NotificationPreferences, value: boolean) => {
+    // Capture old preferences so we can revert on failure
+    const oldPreferences = { ...preferences };
     const newPreferences = { ...preferences, [key]: value };
     setPreferences(newPreferences);
 
     try {
       setLoading(true);
-      await api.put('/users/notification-preferences', {
-        preferences: newPreferences,
-      });
+      // Send preferences object directly as the request body
+      await api.put('/notifications/preferences', newPreferences);
+      console.log('Notification preferences updated successfully');
+
+      // Update cache with successful server update
+      await Storage.set('notificationPreferences', newPreferences);
     } catch (error) {
       console.error('Error updating notification preferences:', error);
-      // Revert on error
-      setPreferences(preferences);
+      // Revert to previous preferences on error
+      setPreferences(oldPreferences);
     } finally {
       setLoading(false);
     }

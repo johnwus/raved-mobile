@@ -138,7 +138,7 @@ class BackgroundSyncService {
             }
         }
         job.progress = 80;
-        // Get latest versions for key entities
+        // Get latest versions for keys entities
         const versionStats = await data_versioning_service_1.DataVersioningService.getVersionStats(undefined, undefined, userId);
         job.progress = 100;
         job.metadata = {

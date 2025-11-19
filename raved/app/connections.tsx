@@ -358,9 +358,9 @@ export default function ConnectionsScreen() {
                   <View style={styles.connectionDetails}>
                     <Text style={styles.connectionName}>{item.user.name}</Text>
                     <Text style={styles.connectionFaculty}>{item.user.faculty}</Text>
-                    {item.mutualFriends && (
+                    {item.isMutual && (
                       <Text style={styles.mutualText}>
-                        {item.mutualFriends} mutual friends
+                        {item.mutualFriends || 0} mutual connections
                       </Text>
                     )}
                     {item.reason && (

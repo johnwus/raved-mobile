@@ -23,5 +23,7 @@ const StorySchema = new mongoose_1.Schema({
     },
     createdAt: { type: Date, default: Date.now }
 });
+// TTL index to auto-expire stories at expiresAt
+StorySchema.index({ expiresAt: 1 }, { expireAfterSeconds: 0 });
 StorySchema.index({ userId: 1, expiresAt: -1 });
 exports.Story = (0, mongoose_1.model)('Story', StorySchema);

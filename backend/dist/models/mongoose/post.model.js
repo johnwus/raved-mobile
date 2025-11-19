@@ -34,7 +34,8 @@ const PostSchema = new mongoose_1.Schema({
         description: String,
         paymentMethods: [String],
         contactPhone: String,
-        meetupLocation: String
+        meetupLocation: String,
+        storeItemId: String,
     },
     likesCount: { type: Number, default: 0 },
     commentsCount: { type: Number, default: 0 },
@@ -44,6 +45,23 @@ const PostSchema = new mongoose_1.Schema({
     isFeatured: { type: Boolean, default: false },
     featuredAt: Date,
     faculty: String,
+    // Post-moderation fields
+    isRemoved: { type: Boolean, default: false },
+    removedReason: {
+        type: String,
+        enum: ['automated_moderation', 'manual_review', 'user_deleted']
+    },
+    removedAt: Date,
+    isFlaggedForReview: { type: Boolean, default: false },
+    moderationResult: {
+        isFlagged: Boolean,
+        categories: Object,
+        category_scores: Object,
+        flagged_categories: [String],
+        severity: String,
+        rawScores: Object,
+    },
+    moderatedAt: Date,
     createdAt: { type: Date, default: Date.now, index: true },
     updatedAt: { type: Date, default: Date.now },
     deletedAt: Date
@@ -54,4 +72,10 @@ PostSchema.index({ userId: 1, createdAt: -1 });
 PostSchema.index({ tags: 1 });
 PostSchema.index({ isForSale: 1 });
 PostSchema.index({ isFeatured: 1, createdAt: -1 });
+PostSchema.index({ 'saleDetails.storeItemId': 1 }, { sparse: true });
+PostSchema.index({ visibility: 1, faculty: 1, createdAt: -1 });
+// Post-moderation indexes
+PostSchema.index({ isRemoved: 1, createdAt: -1 });
+PostSchema.index({ isFlaggedForReview: 1, createdAt: -1 });
+PostSchema.index({ moderatedAt: 1 }, { sparse: true });
 exports.Post = (0, mongoose_1.model)('Post', PostSchema);

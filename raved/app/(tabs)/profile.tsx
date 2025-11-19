@@ -4,9 +4,7 @@ import {
   Text,
   ScrollView,
   TouchableOpacity,
-  Image,
   StyleSheet,
-  FlatList,
   ActivityIndicator,
   RefreshControl,
 } from 'react-native';
@@ -16,15 +14,16 @@ import { Ionicons } from '@expo/vector-icons';
 import { theme } from '../../theme';
 import { Button } from '../../components/ui/Button';
 import { Avatar } from '../../components/ui/Avatar';
-import { EmptyState } from '../../components/ui/EmptyState';
 import { useAuth } from '../../hooks/useAuth';
 import { Post, StoreItem } from '../../types';
 import { userApi, UserProfile } from '../../services/userApi';
 import { subscriptionsApi } from '../../services/subscriptionsApi';
 import { Storage } from '../../services/storage';
 import { storeApi } from '../../services/storeApi';
-import { ProductGrid } from '../../components/store/ProductGrid';
 import { SkeletonLoader } from '../../components/ui/SkeletonLoader';
+import { CommentsTab } from './components/CommentsTab';
+import { PostsGridTab } from './components/PostsGridTab';
+import { SavedTab } from './components/SavedTab';
 
 type ProfileTab = 'posts' | 'comments' | 'liked' | 'saved';
 
@@ -170,113 +169,6 @@ export default function ProfileScreen() {
           <ActivityIndicator size="large" color={theme.colors.primary} />
         </View>
       </SafeAreaView>
-    );
-  }
-
-  const getTabContent = (): Post[] => {
-    switch (activeTab) {
-      case 'posts':
-        return userPosts;
-      case 'liked':
-        return likedPosts;
-      case 'saved':
-        return savedPostsList;
-      case 'comments':
-        return []; // Comments are handled separately
-      default:
-        return [];
-    }
-  };
-
-  const renderPostGrid = (posts: Post[]) => {
-    if (posts.length === 0) {
-      const emptyConfig: Record<ProfileTab, { icon: keyof typeof Ionicons.glyphMap; text: string; action?: string }> = {
-        posts: { icon: 'camera-outline', text: 'No posts yet', action: 'Create Your First Post' },
-        comments: { icon: 'chatbubble-outline', text: 'No comments yet' },
-        liked: { icon: 'heart-outline', text: 'No liked posts yet' },
-        saved: { icon: 'bookmark-outline', text: 'No saved posts yet' },
-      };
-      const config = emptyConfig[activeTab];
-
-      return (
-        <EmptyState
-          icon={config.icon}
-          title={config.text}
-          actionLabel={config.action}
-          onAction={config.action && activeTab === 'posts' ? () => router.push('/(tabs)/create' as any) : undefined}
-        />
-      );
-    }
-
-    return (
-      <FlatList
-        data={posts}
-        numColumns={3}
-        renderItem={({ item }) => (
-          <TouchableOpacity
-            style={styles.postThumbnail}
-            onPress={() => router.push(`/post/${item.id}` as any)}
-          >
-            <Image
-              source={{ uri: item.media.url || item.media.items?.[0] || item.media.thumbnail || '' }}
-              style={styles.thumbnailImage}
-            />
-            {item.media.type === 'video' && (
-              <View style={styles.videoOverlay}>
-                <Ionicons name="play" size={16} color="white" />
-              </View>
-            )}
-            {item.media.type === 'carousel' && (
-              <View style={styles.carouselOverlay}>
-                <Ionicons name="copy" size={12} color="white" />
-              </View>
-            )}
-          </TouchableOpacity>
-        )}
-        keyExtractor={(item) => item.id}
-        scrollEnabled={false}
-        ItemSeparatorComponent={() => <View style={{ width: 2 }} />}
-        columnWrapperStyle={styles.postRow}
-      />
-    );
-  };
-
-  const renderComments = () => {
-    if (loadingTab) {
-      return (
-        <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color={theme.colors.primary} />
-        </View>
-      );
-    }
-
-    if (userComments.length === 0) {
-      return (
-        <EmptyState
-          icon="chatbubble-outline"
-          title="No comments yet"
-        />
-      );
-    }
-
-    return (
-      <FlatList
-        data={userComments}
-        renderItem={({ item }) => (
-          <View style={styles.commentCard}>
-            <Text style={styles.commentText}>{item.text}</Text>
-            {item.post && (
-              <Text style={styles.commentPostPreview} numberOfLines={1}>
-                On: {item.post.caption || 'Post'}
-              </Text>
-            )}
-            <Text style={styles.commentTime}>{item.timeAgo}</Text>
-          </View>
-        )}
-        keyExtractor={(item) => item.id}
-        scrollEnabled={false}
-        ItemSeparatorComponent={() => <View style={{ height: theme.spacing[2] }} />}
-      />
     );
   };
 
@@ -471,11 +363,27 @@ export default function ProfileScreen() {
           </View>
 
           {/* Tab Content */}
-          <View style={styles.tabContent}>
-            {activeTab === 'comments' ? (
-              renderComments()
-            ) : activeTab === 'saved' ? (
-              <View>
+          {activeTab === 'comments' && (
+            <View style={styles.tabContent} key="comments-tab">
+              {loadingTab && userComments.length === 0 ? (
+                <View style={{ paddingTop: theme.spacing[4] }}>
+                  <SkeletonLoader height={60} style={{ marginVertical: theme.spacing[1] }} />
+                  <SkeletonLoader height={60} style={{ marginVertical: theme.spacing[1] }} />
+                  <SkeletonLoader height={60} style={{ marginVertical: theme.spacing[1] }} />
+                </View>
+              ) : (
+                <CommentsTab
+                  userComments={userComments}
+                  loadingTab={loadingTab}
+                  profileUserId={profile?.id || ''}
+                  currentUserId={authUser?.id || ''}
+                />
+              )}
+            </View>
+          )}
+          
+          {activeTab === 'saved' && (
+            <View style={styles.tabContent} key="saved-tab">
                 {/* Segmented control for Saved */}
                 <View style={styles.segmentContainer}>
                   <TouchableOpacity
@@ -506,31 +414,57 @@ export default function ProfileScreen() {
                       <SkeletonLoader height={110} style={styles.skeletonItem} />
                     </View>
                   </View>
-                ) : savedSegment === 'posts' ? (
-                  renderPostGrid(savedPostsList)
-                ) : savedProducts.length === 0 ? (
-                  <EmptyState icon="bookmark-outline" title="No saved products yet" />
                 ) : (
-                  <ProductGrid products={savedProducts} />
+                  <SavedTab
+                    savedPostsList={savedPostsList}
+                    savedProducts={savedProducts}
+                    savedSegment={savedSegment}
+                  />
                 )}
-              </View>
-            ) : loadingTab && getTabContent().length === 0 ? (
-              <View style={{ paddingTop: theme.spacing[4] }}>
-                <View style={styles.skeletonRow}>
-                  <SkeletonLoader height={110} style={styles.skeletonItem} />
-                  <SkeletonLoader height={110} style={styles.skeletonItem} />
-                  <SkeletonLoader height={110} style={styles.skeletonItem} />
+            </View>
+          )}
+          
+          {activeTab === 'posts' && (
+            <View style={styles.tabContent} key="posts-tab">
+              {loadingTab && userPosts.length === 0 ? (
+                <View style={{ paddingTop: theme.spacing[4] }}>
+                  <View style={styles.skeletonRow}>
+                    <SkeletonLoader height={110} style={styles.skeletonItem} />
+                    <SkeletonLoader height={110} style={styles.skeletonItem} />
+                    <SkeletonLoader height={110} style={styles.skeletonItem} />
+                  </View>
+                  <View style={styles.skeletonRow}>
+                    <SkeletonLoader height={110} style={styles.skeletonItem} />
+                    <SkeletonLoader height={110} style={styles.skeletonItem} />
+                    <SkeletonLoader height={110} style={styles.skeletonItem} />
+                  </View>
                 </View>
-                <View style={styles.skeletonRow}>
-                  <SkeletonLoader height={110} style={styles.skeletonItem} />
-                  <SkeletonLoader height={110} style={styles.skeletonItem} />
-                  <SkeletonLoader height={110} style={styles.skeletonItem} />
+              ) : (
+                <PostsGridTab posts={userPosts} activeTab="posts" />
+              )}
+            </View>
+          )}
+
+          {activeTab === 'liked' && (
+            <View style={styles.tabContent} key="liked-tab">
+              {loadingTab && likedPosts.length === 0 ? (
+                <View style={{ paddingTop: theme.spacing[4] }}>
+                  <View style={styles.skeletonRow}>
+                    <SkeletonLoader height={110} style={styles.skeletonItem} />
+                    <SkeletonLoader height={110} style={styles.skeletonItem} />
+                    <SkeletonLoader height={110} style={styles.skeletonItem} />
+                  </View>
+                  <View style={styles.skeletonRow}>
+                    <SkeletonLoader height={110} style={styles.skeletonItem} />
+                    <SkeletonLoader height={110} style={styles.skeletonItem} />
+                    <SkeletonLoader height={110} style={styles.skeletonItem} />
+                  </View>
                 </View>
-              </View>
-            ) : (
-              renderPostGrid(getTabContent())
-            )}
-          </View>
+              ) : (
+                <PostsGridTab posts={likedPosts} activeTab="liked" />
+              )}
+            </View>
+          )}
         </View>
       </ScrollView>
     </SafeAreaView>

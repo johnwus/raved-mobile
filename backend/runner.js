@@ -32,7 +32,7 @@ const io = new Server(httpServer, {
 const CONFIG = {
   PORT: process.env.PORT || 3000,
   NODE_ENV: process.env.NODE_ENV || 'development',
-  JWT_SECRET: process.env.JWT_SECRET || 'raved-super-secret-key-change-in-production',
+  JWT_SECRET: process.env.JWT_SECRET || 'raved-super-secret-keys-change-in-production',
   JWT_REFRESH_SECRET: process.env.JWT_REFRESH_SECRET || 'raved-refresh-secret',
   JWT_EXPIRES_IN: '24h',
   JWT_REFRESH_EXPIRES_IN: '7d',

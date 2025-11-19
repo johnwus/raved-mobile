@@ -123,7 +123,14 @@ export const storeApi = {
   // Cart Operations
   getUserCart: async () => {
     const response = await api.get('/cart');
-    return response.data as { success?: boolean; items: any[]; total?: number; count?: number };
+    return response.data as { 
+      success?: boolean; 
+      cartItems: any[];  // Backend returns cartItems, not items
+      summary?: { subtotal: number; itemCount: number; totalQuantity: number };
+      items?: any[];     // Fallback for compatibility
+      total?: number; 
+      count?: number; 
+    };
   },
 
   clearCart: async () => {

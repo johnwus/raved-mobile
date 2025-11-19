@@ -39,7 +39,7 @@ export const themeController = {
     try {
       const { themeId } = req.body;
       const userId = req.user.id;
-      const isPremiumUser = req.user.subscription_tier === 'premium';
+      const isPremiumUser = req.user.subscription_tier === 'premium' || req.user.role === 'admin';
 
       const updatedThemeId = await themeService.setUserTheme(userId, themeId, isPremiumUser);
       res.json({ success: true, message: 'Theme updated successfully', themeId: updatedThemeId });
@@ -54,18 +54,13 @@ export const themeController = {
 
   setUserDarkMode: async (req: Request, res: Response) => {
     try {
-      const darkMode = Boolean(req.body.darkMode);
       const userId = req.user.id;
 
-      if (typeof darkMode !== 'boolean') {
-        return res.status(400).json({ error: 'darkMode must be a boolean value' });
-      }
-
-      const updatedDarkMode = await themeService.setUserDarkMode(userId, darkMode);
-      res.json({ success: true, message: 'Dark mode preference updated successfully', darkMode: updatedDarkMode });
+      const updatedDarkMode = await themeService.setUserDarkMode(userId);
+      res.json({ success: true, message: 'Dark mode preference toggled successfully', darkMode: updatedDarkMode });
     } catch (error: any) {
-      console.error('Set Dark Mode Error:', error);
-      res.status(500).json({ error: 'Failed to set dark mode preference' });
+      console.error('Toggle Dark Mode Error:', error);
+      res.status(500).json({ error: 'Failed to toggle dark mode preference' });
     }
   },
 

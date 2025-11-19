@@ -9,6 +9,7 @@ import cartRoutes from './cart.routes';
 import paymentRoutes from './payment.routes';
 import adminRoutes from './admin.routes';
 import searchRoutes from './search.routes';
+import opsRoutes from './ops.routes';
 import eventsRoutes from './events.routes';
 import notificationsRoutes from './notifications.routes';
 import deviceTokenRoutes from './device-token.routes';
@@ -52,5 +53,6 @@ router.use('/backup', backupRoutes); // Use backup routes
 router.use('/offline-sync', offlineSyncRoutes); // Use offline sync routes
 router.use('/rate-limits', rateLimitRoutes); // Use rate limit management routes
 router.use('/moderation', moderationRoutes); // Use moderation routes
+router.use('/ops', opsRoutes);
 
 export default router;

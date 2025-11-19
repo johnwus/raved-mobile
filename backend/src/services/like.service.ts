@@ -49,15 +49,20 @@ export const likePost = async (postId: string, userId: string, userSubscription:
                 const user = userResult.rows[0];
 
                 const actorName = `${user.first_name} ${user.last_name}`;
+                const postTitle = post.caption?.substring(0, 100) || 'your post';
 
-                // Create notification using the controller
+                // Create notification using the controller with enriched data
                 await notificationsController.createNotification(
                     post.userId,
                     'like',
                     'New Like',
                     `${actorName} liked your post`,
                     userId,
-                    { postId, type: 'post' }
+                    { 
+                        postId, 
+                        type: 'post',
+                        postTitle
+                    }
                 );
 
                 if (userSubscription === 'premium') {

@@ -8,6 +8,13 @@ This document identifies ALL gaps between the HTML prototype (single source of t
 ---
 
 ## Recent Updates (Social polish)
+
+### Sprint 1 Completion Update
+- Post Cards: video overlay, carousel arrows/dots, full action bar, for-sale overlays
+- Create Post: visibility selector, outfit details (brand/occasion), marketplace fields, media grid, location/tags
+- Profile Tabs: posts/liked/saved grids, comments list, overlays and empty states
+- FAB badges: wired for cart, connections, messages
+- DTOs normalized across feed/trending/suggestions; FE trending normalization for safety
 - Search: Clear button and improved empty copy; user taps route to `/profile/[id]`, post taps to `/post/[id]`.
 - Notifications: Gradient icon circles, Mark All as Read wired; realtime socket listener appends to list.
 - Connections: Mutual badge/count styling added; per-filter empty states with CTA to discover people; backend integration for following, followers, and pending requests; loading skeletons.
@@ -48,30 +55,17 @@ This document identifies ALL gaps between the HTML prototype (single source of t
 ## ❌ CRITICAL GAPS (Blocking MVP)
 
 ### GAP 1: Bottom Sheets - 80% Missing
-**Status:** Base component exists; core sheets progressing
+**Status:** Base component exists; a few core sheets are present
 
 **Implemented/Updated (Structural — heights 60/95, handle, scroll):**
-- ✅ MoreSheet (full-screen, persistent)
-- ✅ ShareSheet (contextual, 65% height)
-- ✅ SortFilterSheet (contextual, 75% height)
-- ✅ RankingsSheet (components/sheets/RankingsSheet.tsx)
-- ✅ SubscriptionSheet (components/sheets/SubscriptionSheet.tsx)
-- ✅ ThemesSheet (components/sheets/ThemesSheet.tsx)
-- ✅ EditProfileSheet (components/sheets/EditProfileSheet.tsx)
-- ✅ AvatarPickerSheet (components/sheets/AvatarPickerSheet.tsx)
-- ✅ PrivacySettingsSheet (components/sheets/PrivacySettingsSheet.tsx)
-- ✅ InboxSheet (components/sheets/InboxSheet.tsx)
-- ✅ ChatSheet (components/sheets/ChatSheet.tsx)
-- ✅ ConnectionsSheet (components/sheets/ConnectionsSheet.tsx)
-- ✅ SearchOverlaySheet (components/sheets/SearchOverlaySheet.tsx)
-- ✅ NotificationsSheet (components/sheets/NotificationsSheet.tsx)
-- ✅ CommentsSheet (components/sheets/CommentsSheet.tsx)
-- ✅ CreateEventSheet (components/sheets/CreateEventSheet.tsx)
-- ✅ CreateStorySheet (components/sheets/CreateStorySheet.tsx)
-- ✅ DatabaseSettingsSheet (components/sheets/DatabaseSettingsSheet.tsx)
-- ✅ ApiSettingsSheet (components/sheets/ApiSettingsSheet.tsx)
-- ✅ HelpSupportSheet (components/sheets/HelpSupportSheet.tsx)
-- ✅ AboutSheet (components/sheets/AboutSheet.tsx)
+- ✅ MoreSheet (components/sheets/MoreSheet.tsx)
+- ✅ ShareSheet (components/sheets/ShareSheet.tsx)
+- ✅ SortFilterSheet (components/sheets/SortFilterSheet.tsx)
+- ✅ RegistrationSheet (components/sheets/RegistrationSheet.tsx)
+- ✅ PasswordResetSheet (components/sheets/PasswordResetSheet.tsx)
+
+Notes:
+- Additional prototype “sheets” (Rankings, Subscription, Themes, Edit Profile, Avatar Picker, Privacy, Inbox, Chat, Connections, Search Overlay, Notifications, Comments, Create Event, Create Story, Database Settings, API Settings, Help & Support, About) are currently realized as routed modals/screens under `app/` (e.g., `app/subscription.tsx`, `app/rankings.tsx`, `app/themes.tsx`, etc.) and not as reusable sheet components. They still require feature-complete UIs to match the prototype.
 
 Notes:
 - Each sheet uses BottomSheet with: drag handle, collapsed 60vh and expanded 95vh via allowCollapse, scrollable content, and proper overlay behavior. Content will be filled in respective gaps (e.g., Rankings, Subscription, etc.).
@@ -87,23 +81,23 @@ Notes:
 **What's Missing:**
 
 **Media Handling (Critical):**
-- ❌ **Video posts**: Play overlay, thumbnail, "Video" badge (top-left)
-- ❌ **Carousel posts**: Swipe gesture, prev/next buttons, dot indicators, photo count badge (top-right)
-- ❌ Aspect ratio 1:1 enforcement on all media
-- ❌ Clickable overlay to open post detail
+- ✅ **Video posts**: Play overlay, thumbnail, "Video" badge (top-left)
+- ✅ **Carousel posts**: Swipe gesture, prev/next buttons, dot indicators, photo count badge (top-right)
+- ✅ Aspect ratio 1:1 enforcement on all media
+- ✅ Clickable overlay to open post detail
 
 **Action Bar (Critical):**
-- ❌ Like button with heart animation
-- ❌ Comment button with count
-- ❌ Share button
-- ❌ Save/Bookmark button (right side)
-- ❌ More options menu (ellipsis, right side)
-- ❌ Add to cart button (when item is for sale)
+- ✅ Like button with heart animation
+- ✅ Comment button with count
+- ✅ Share button
+- ✅ Save/Bookmark button (right side)
+- ✅ More options menu (ellipsis, right side)
+- ✅ Add to cart button (when item is for sale)
 
 **For Sale Features:**
-- ❌ Price tag overlay (green gradient with ₵ symbol)
-- ❌ Sale badge on content
-- ❌ Cart icon on post
+- ✅ Price tag overlay (green gradient with ₵ symbol)
+- ✅ Sale badge on content
+- ✅ Cart icon on post
 
 **HTML Reference Lines:** 8700-8900 (renderPostMedia function)
 
@@ -530,7 +524,7 @@ Remaining polish:
 
 ### Phase 3: Home & Feed
 - [x] ✅ Stories row matches HTML exactly
-- [ ] ⚠️ Post cards match postCardHTML function - **50% DONE**
+- [x] ✅ Post cards match postCardHTML function - **100% DONE**
 - [ ] ❌ Video posts match HTML - **MISSING**
 - [ ] ❌ Carousel posts match HTML with swipe - **MISSING**
 - [ ] ⚠️ Post actions bar matches HTML - **MISSING**
@@ -610,7 +604,7 @@ Remaining polish:
 - [ ] ⚠️ FABs match HTML exactly - **50% DONE**
 - [x] ✅ Bottom nav matches HTML exactly
 - [x] ✅ Dark mode perfect match
-- [x] ✅ All themes perfect match
+- [ ] ❌ All premium theme variants match HTML exactly - **MISSING**
 
 ---
 
@@ -694,11 +688,118 @@ Remaining polish:
 16. **All Settings Screens**
 17. **Edit Profile + Avatar**
 18. **Privacy Settings**
-19. **Animations & Micro-interactions**
+19. **---
+
+## 🧩 Backend Parity & Production Readiness Checklist
+
+### API Contracts and Endpoints (align with prototype flows)
+- Posts: media types (image/video/carousel/text), sale_details, visibility, tags, faculty filters, featured feed, trending, suggestions
+- Comments: create/list, pagination, moderation flags, like counts
+- Likes/Bookmarks: idempotent like/unlike, save/unsave endpoints; counters returned in payloads
+- Shares/Deep links: create share, track clicks; return share_url for post/profile/event/product
+- Stories: create (image/video/template), list, expire, views tracking
+- Store: list items (filters: category, price sort, popular), get item, create item (premium), edit, delete; similar items and recommendations endpoints
+- Cart/Orders: add/remove/update quantity; checkout initialize; order create; status transitions; delivery method & address; pricing
+- Payments: subscription checkout (Paystack) init + webhook; store order payments; verification and error handling; secure reference IDs
+- Subscriptions: plans, status, upgrade; gating seller features and rankings access
+- Rankings: weekly/monthly leaderboards; scoring points mapping (like/comment/share/sale/feature); podium data; prize pool
+- Events: list with filters (type/audience), create, join/leave, detail, capacity/full
+- Faculties: list categories, stats, faculty feed; mapping of users to faculties
+- Connections: follow/unfollow/connect/accept/decline/suggested; counts and mutuals
+- Chats: list conversations, messages pagination, send/typing indicators; unread counts
+- Notifications: list, unread counts, mark read; push token registration
+- Search: posts/items/users/tags; sorting and pagination; server-side relevance
+- Settings: profile update, avatar update (presigned uploads), privacy toggles, language/date/currency preferences
+
+### DTOs and Validation
+- Define typed request/response DTOs for every route; document required/optional fields and enums
+- Enforce express-validator schemas; return consistent error shapes; include pagination meta
+- Normalize identifiers (email/username/phone) like the prototype’s login rules
+
+### Security & Prod Hardening
+- Enforce required env vars in non-dev (JWT secrets, DB URLs, SendGrid/Twilio/Paystack)
+- Tight CORS in prod (only raved.app domains); remove wildcard
+- Reduce JSON body limits; isolate uploads to multer/presigned S3 and validate mime/size
+- Rate limits per sensitive routes (auth, payments, comments, chats)
+- Content moderation pipeline active; trust score adjustments
+- Structured logging (pino/winston) and error correlation IDs
+
+### Data & Migrations
+- Replace runtime schema init with versioned migrations (Prisma/Knex/Flyway)
+- Ensure required extensions (pgcrypto or uuid-ossp) enabled explicitly
+- Seed scripts for dev parity (users/posts/store/events) consistent with prototype data
+- Background jobs: weekly/monthly ranking resets and prize assignment; notification digests
+
+### Realtime (Socket.IO)
+- Authenticate handshake; throttle auth failures
+- Standardize event names/payloads: new_message, user_typing, post_like, post_comment, notification, store_item_sold
+- Room conventions: user:{id}, chat:{id}; rejoin after token refresh
+- Backpressure and rate limiting for send_message/typing
+
+### Internationalization & Privacy
+- i18n locales for en, fr, tw, ha; Accept-Language handling; translation coverage check
+- Respect analytics/personalized-ads toggles server-side; do not store when disabled
+- Data retention windows for analytics/PII; GDPR deletion flow
+
+### Domain & Environment Alignment
+- Single canonical API domain (api.raved.app or api.raved.com) across backend and app
+- Mobile dev base URL strategy (iOS: localhost, Android: 10.0.2.2) with EXPO_PUBLIC_API_URL override
+
+### Payments
+- Paystack integration: initialize, verify, webhooks; secure signature validation; retry logic
+- Subscription state machine (trial → premium → expired); reconcile on webhook
+- Order payments and refunds; receipt emails/SMS
+
+### Media & Uploads
+- Presigned upload endpoints; image processing (size/format); video constraints; CDN caching headers
+- Anti-abuse: type sniffing, content scanning hooks
+
+### Observability & Ops
+- /health and /ready endpoints; metrics (Prometheus/OpenTelemetry)
+- Dashboards for errors, latency, rate limits, job queues
+- Backup/restore procedures verified; automated schedules
+
+---
+
+## Database Partitioning & Consistency Plan
+
+Authoritative stores by entity (single source of truth):
+- MongoDB (authoritative for unstructured social content): posts, comments, likes, notifications. Reason: document-style payloads, flexible media fields, rapid iteration, and existing Mongoose models and queries (feed/trending/suggestions) are already stable here.
+- PostgreSQL (authoritative for relational/transactional domains): users/identity, connections/follows, conversations/messages (if needed), store_items, cart, orders, subscriptions, rankings/scores, device_tokens, settings/privacy, events/attendees, shares. Reason: relational integrity, constraints, and analytics.
+- Redis: cache (post counters, leaderboards), rate limits, ephemeral queues (offline sync), feature flags.
+
+Current code alignment (no migration needed for core content):
+- posts.controller writes/read posts/comments/likes in MongoDB and enriches with PostgreSQL users and other relational data; this is the target state for social entities.
+- We added a direct mapping from sale posts → store_items via saleDetails.storeItemId, bridging Mongo (post) to PG (store) without duplication.
+
+Decisions and refactor tasks:
+1) Keep MongoDB as source of truth for posts/comments/likes/notifications.
+   - Remove any temptation to duplicate core content structures in PostgreSQL. Use PG only for relational cross-cuts (e.g., shares table) and joins.
+   - Ensure indices on Mongo collections (userId, createdAt, visibility, faculty, tags, likesCount, savesCount) to sustain feeds.
+
+2) Standardize DTOs across endpoints.
+   - All post list endpoints return: { id, user { avatar }, caption, media { type,url,thumbnail,items }, tags, likes, comments, shares, timeAgo, forSale, price, saleDetails?.storeItemId }.
+   - Trending/Suggestions endpoints are already normalized; keep it consistent.
+
+3) Caching strategy.
+   - Use Redis keys: feed:user:{id}:page:{n}, post:{id}:counts, rankings:{period}.
+   - TTLs: feed 5–10m, counts 1–2m, rankings 5m; invalidate on write via pub/sub.
+
+4) Concurrency and consistency.
+   - Idempotent writes for likes/saves in Mongo (unique (userId,targetId,targetType)). For PG cross-writes (e.g., shares), use ON CONFLICT.
+   - Transactions on PG side for multi-table operations (e.g., create post (Mongo) + create store_item (PG) is now linked via storeItemId).
+
+5) Cleanup plan.
+   - Backfill sale posts missing saleDetails.storeItemId by scanning store_items (seller_id + recent name/price) and updating Post docs.
+   - Add queryable index on saleDetails.storeItemId in Mongo for direct lookups.
+
+Status notes for Sprint 1:
+- DTOs standardized and FE normalization added for safety. Sale posts now include storeItemId for direct navigation to products.
 
 ---
 
 ## 🔍 How to Verify Each Gap is Closed
+🔍 How to Verify Each Gap is Closed
 
 For each implemented feature:
 1. Open prototype HTML in browser

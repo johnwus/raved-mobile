@@ -2,6 +2,7 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.themeService = void 0;
 const database_1 = require("../config/database");
+const database_2 = require("../config/database");
 exports.themeService = {
     getThemes: async (isPremium) => {
         const themes = [
@@ -75,11 +76,31 @@ exports.themeService = {
         return themes.filter(theme => !theme.premium || isPremium);
     },
     getUserTheme: async (userId) => {
+        const cacheKey = `user_theme:${userId}`;
+        // Try to get from cache first
+        try {
+            const cached = await database_2.redis.get(cacheKey);
+            if (cached) {
+                return JSON.parse(cached);
+            }
+        }
+        catch (cacheError) {
+            console.warn('Redis cache error:', cacheError);
+        }
+        // Get from database
         const result = await database_1.pgPool.query('SELECT theme_preference, dark_mode_preference FROM users WHERE id = $1', [userId]);
-        return {
+        const themeData = {
             themeId: result.rows[0]?.theme_preference || 'default',
             darkMode: result.rows[0]?.dark_mode_preference || false
         };
+        // Cache for 1 hour
+        try {
+            await database_2.redis.setex(cacheKey, 3600, JSON.stringify(themeData));
+        }
+        catch (cacheError) {
+            console.warn('Redis cache set error:', cacheError);
+        }
+        return themeData;
     },
     setUserTheme: async (userId, themeId, isPremiumUser) => {
         const themes = [
@@ -93,10 +114,24 @@ exports.themeService = {
             throw new Error('Premium subscription required for this theme');
         }
         await database_1.pgPool.query('UPDATE users SET theme_preference = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2', [themeId, userId]);
+        // Invalidate cache
+        try {
+            await database_2.redis.del(`user_theme:${userId}`);
+        }
+        catch (cacheError) {
+            console.warn('Redis cache delete error:', cacheError);
+        }
         return themeId;
     },
     setUserDarkMode: async (userId, darkMode) => {
         await database_1.pgPool.query('UPDATE users SET dark_mode_preference = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2', [darkMode, userId]);
+        // Invalidate cache
+        try {
+            await database_2.redis.del(`user_theme:${userId}`);
+        }
+        catch (cacheError) {
+            console.warn('Redis cache delete error:', cacheError);
+        }
         return darkMode;
     },
     getSystemTheme: async () => {

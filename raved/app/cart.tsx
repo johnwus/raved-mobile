@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   View,
   Text,
@@ -12,31 +12,88 @@ import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { theme } from '../theme';
 import { useStoreStore } from '../store/storeStore';
+import { storeApi } from '../services/storeApi';
 import { formatCurrency } from '../utils/formatters';
 import { Button } from '../components/ui/Button';
 import { EmptyState } from '../components/ui/EmptyState';
 
 export default function CartScreen() {
   const router = useRouter();
-  const { cart, products, removeFromCart, updateCartQuantity, isLoading } = useStoreStore();
+  const { cart, products, removeFromCart, updateCartQuantity, isLoading, fetchProducts } = useStoreStore();
+  const [cartData, setCartData] = useState<any[]>([]);
+  const [loadingCart, setLoadingCart] = useState(true);
 
-  console.log('Cart items:', cart);
-  console.log('Products:', products);
+  // Fetch products on mount
+  useEffect(() => {
+    console.log('Cart screen mounted, fetching products...');
+    fetchProducts();
+  }, [fetchProducts]);
 
-  const cartItems = cart.map(cartItem => {
-    const product = products.find(p => p.id === cartItem.productId);
-    console.log('Cart item:', cartItem, 'Product found:', product);
-    return { ...cartItem, product };
-  }).filter(item => item.product);
+  // Fetch cart items from backend
+  useEffect(() => {
+    const fetchCart = async () => {
+      try {
+        setLoadingCart(true);
+        const response = await storeApi.getUserCart() as any;
+        console.log('Cart response from backend:', { 
+          hasCartItems: !!response?.cartItems, 
+          count: response?.cartItems?.length,
+          summary: response?.summary 
+        });
+        
+        // Backend returns cartItems array
+        const cartItemsData = response?.cartItems || response?.items || [];
+        
+        if (cartItemsData && Array.isArray(cartItemsData) && cartItemsData.length > 0) {
+          setCartData(cartItemsData);
+          console.log('Cart loaded successfully:', cartItemsData.length, 'items');
+        } else {
+          console.log('No items in cart response');
+          setCartData([]);
+        }
+      } catch (error) {
+        console.error('Failed to fetch cart:', error);
+        setCartData([]);
+      } finally {
+        setLoadingCart(false);
+      }
+    };
+
+    fetchCart();
+  }, []);
+
+  console.log('Cart items:', cartData.length, 'items');
+  console.log('Store products:', products.length, 'products');
+
+  // Transform cart data to match expected format
+  // Backend returns: {cartItemId, quantity, item: {id, name, price, ...}, addedAt}
+  const cartItems = cartData
+    .map((cartItem: any) => {
+      // Backend format: cartItem.item contains product data
+      const productData = cartItem.item;
+      
+      if (!productData?.id) {
+        console.warn('Skipping cart item with no product data:', cartItem);
+        return null;
+      }
+      
+      return {
+        id: cartItem.cartItemId,
+        productId: productData.id,
+        quantity: cartItem.quantity || 1,
+        product: productData,
+      };
+    })
+    .filter((item): item is any => item !== null && item.product?.id);
 
   const subtotal = cartItems.reduce((sum, item) => 
-    sum + (item.product!.price * item.quantity), 0
+    sum + ((item.product?.price || 0) * (item.quantity || 1)), 0
   );
   const deliveryFee = 0; // Free delivery
   const total = subtotal + deliveryFee;
 
   const handleCheckout = () => {
-    if (cartItems.length > 0 && !isLoading) {
+    if (cartItems.length > 0 && !loadingCart) {
       router.push('/checkout');
     }
   };
@@ -61,7 +118,13 @@ export default function CartScreen() {
         </TouchableOpacity>
       </View>
 
-      {cartItems.length === 0 ? (
+      {loadingCart && (
+        <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
+          <Text style={{ color: '#6B7280' }}>Loading cart...</Text>
+        </View>
+      )}
+      
+      {!loadingCart && cartItems.length === 0 && (
         <EmptyState
           icon="cart-outline"
           title="Your cart is empty"
@@ -69,7 +132,9 @@ export default function CartScreen() {
           actionLabel="Browse Store"
           onAction={() => router.push('/store' as any)}
         />
-      ) : (
+      )}
+      
+      {!loadingCart && cartItems.length > 0 && (
         <>
           <ScrollView style={styles.content}>
             {cartItems.map((item) => (

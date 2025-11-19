@@ -27,7 +27,16 @@ class Logger {
         if (config_1.CONFIG.LOG_LEVEL === 'info' ||
             (config_1.CONFIG.LOG_LEVEL === 'warn' && entry.level !== 'info') ||
             (config_1.CONFIG.LOG_LEVEL === 'error' && entry.level === 'error')) {
-            console.log(`[${entry.timestamp}] ${entry.level.toUpperCase()}: ${entry.method} ${entry.url} ${entry.statusCode || ''} ${entry.responseTime ? `(${entry.responseTime}ms)` : ''}`);
+            // Format log message based on available fields
+            if (entry.method && entry.url) {
+                console.log(`[${entry.timestamp}] ${entry.level.toUpperCase()}: ${entry.method} ${entry.url} ${entry.statusCode || ''} ${entry.responseTime ? `(${entry.responseTime}ms)` : ''}`);
+            }
+            else if (entry.message) {
+                console.log(`[${entry.timestamp}] ${entry.level.toUpperCase()}: ${entry.message}`);
+            }
+            else {
+                console.log(`[${entry.timestamp}] ${entry.level.toUpperCase()}:`, entry);
+            }
         }
         // File logging
         logStream.write(logLine);
@@ -36,6 +45,7 @@ class Logger {
         this.log({
             timestamp: new Date().toISOString(),
             level: 'info',
+            message,
             ...data
         });
     }
@@ -43,6 +53,7 @@ class Logger {
         this.log({
             timestamp: new Date().toISOString(),
             level: 'warn',
+            message,
             ...data
         });
     }

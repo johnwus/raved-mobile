@@ -1,0 +1,38 @@
+body {
+    font-family: Arial, sans-serif;
+    margin: 20px;
+}
+
+.media-item {
+    margin: 20px 0;
+    border: 1px solid #ccc;
+    padding: 10px;
+    display: none;
+}
+
+.media-display {
+    max-width: 300px;
+    max-height: 300px;
+}
+
+.buttons {
+    margin-top: 10px;
+}
+
+button {
+    margin: 5px;
+    padding: 10px;
+}
+
+.results {
+    margin-top: 20px;
+}
+
+textarea {
+    width: 100%;
+    height: 200px;
+}
+
+.type-selection {
+    display: none;
+}

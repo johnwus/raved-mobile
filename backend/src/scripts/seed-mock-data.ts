@@ -895,12 +895,22 @@ async function seedConversations() {
           }
 
           // Update conversation with last message info
+          const lastMessageResult = await client.query(`
+            SELECT content FROM messages
+            WHERE conversation_id = $1
+            ORDER BY created_at DESC
+            LIMIT 1
+          `, [conversationId]);
+
+          const lastMessageContent = lastMessageResult.rows[0]?.content || '';
+
           await client.query(`
             UPDATE conversations SET
+              last_message_content = $2,
               last_message_at = (SELECT MAX(created_at) FROM messages WHERE conversation_id = $1),
               updated_at = CURRENT_TIMESTAMP
             WHERE id = $1
-          `, [conversationId]);
+          `, [conversationId, lastMessageContent]);
 
           conversationCount++;
         }
@@ -1128,12 +1138,22 @@ async function generateAdditionalConversations() {
       }
 
       // Update conversation with last message info
+      const lastMessageResult = await client.query(`
+        SELECT content FROM messages
+        WHERE conversation_id = $1
+        ORDER BY created_at DESC
+        LIMIT 1
+      `, [conversationId]);
+
+      const lastMessageContent = lastMessageResult.rows[0]?.content || '';
+
       await client.query(`
         UPDATE conversations SET
+          last_message_content = $2,
           last_message_at = (SELECT MAX(created_at) FROM messages WHERE conversation_id = $1),
           updated_at = CURRENT_TIMESTAMP
         WHERE id = $1
-      `, [conversationId]);
+      `, [conversationId, lastMessageContent]);
 
       conversationCount++;
     }
@@ -1237,9 +1257,94 @@ async function seedLikesAndComments() {
   }
 }
 
+// Create admin connections and posts
+async function seedAdminData() {
+  try {
+    console.log('👑 Setting up admin user data...');
+
+    // Get admin user ID
+    const adminResult = await pgPool.query('SELECT id FROM users WHERE username = $1', ['admin']);
+    if (adminResult.rows.length === 0) {
+      console.log('⚠️ Admin user not found, skipping admin data setup');
+      return;
+    }
+    const adminId = adminResult.rows[0].id;
+
+    // Get some mock user IDs
+    const mockUsers = await pgPool.query('SELECT id FROM users WHERE username LIKE $1 LIMIT 5', ['mock_%']);
+    const mockUserIds = mockUsers.rows.map(r => r.id);
+
+    if (mockUserIds.length === 0) {
+      console.log('⚠️ No mock users found, skipping admin connections');
+      return;
+    }
+
+    // Make admin follow some mock users
+    for (const mockUserId of mockUserIds.slice(0, 3)) {
+      await pgPool.query(`
+        INSERT INTO connections (follower_id, following_id, status, created_at)
+        VALUES ($1, $2, 'accepted', CURRENT_TIMESTAMP)
+        ON CONFLICT (follower_id, following_id) DO NOTHING
+      `, [adminId, mockUserId]);
+    }
+
+    // Update follower/following counts
+    const followerCount = await pgPool.query('SELECT COUNT(*) FROM connections WHERE following_id = $1 AND status = $2', [adminId, 'accepted']);
+    const followingCount = await pgPool.query('SELECT COUNT(*) FROM connections WHERE follower_id = $1 AND status = $2', [adminId, 'accepted']);
+
+    await pgPool.query(`
+      UPDATE users SET
+        followers_count = $2,
+        following_count = $3,
+        updated_at = CURRENT_TIMESTAMP
+      WHERE id = $1
+    `, [adminId, parseInt(followerCount.rows[0].count), parseInt(followingCount.rows[0].count)]);
+
+    // Create some posts for admin user
+    const adminPosts = [
+      {
+        type: 'image',
+        caption: 'Welcome to Raved! 🎉 #CampusLife',
+        media: { image: 'https://i.imgur.com/Ynh9LMX.jpg' },
+        tags: ['Welcome', 'CampusLife'],
+        visibility: 'public'
+      },
+      {
+        type: 'text',
+        caption: 'Excited to launch our new social platform for students! 📚✨',
+        tags: ['Launch', 'Students'],
+        visibility: 'public'
+      }
+    ];
+
+    for (const postData of adminPosts) {
+      const post = new Post({
+        userId: adminId,
+        ...postData,
+        faculty: 'Administration',
+        likesCount: Math.floor(Math.random() * 10) + 1,
+        commentsCount: Math.floor(Math.random() * 5),
+        sharesCount: 0,
+        savesCount: 0,
+        viewsCount: Math.floor(Math.random() * 50) + 10
+      });
+      await post.save();
+
+      // Update admin's post count
+      await pgPool.query('UPDATE users SET posts_count = posts_count + 1 WHERE id = $1', [adminId]);
+    }
+
+    console.log('✅ Admin user data setup completed');
+  } catch (error) {
+    console.error('❌ Error setting up admin data:', error);
+    throw error;
+  }
+}
+
 // Run seeding if this script is executed directly
 if (require.main === module) {
   seedMockData()
+    .then(() => seedAdminData())
     .then(() => {
       console.log('🏁 Mock data seeding script completed');
       process.exit(0);

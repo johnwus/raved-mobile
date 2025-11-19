@@ -51,9 +51,27 @@ export const eventsApi = {
     if (filters?.faculty) params.faculty = filters.faculty;
     if (filters?.page) params.page = filters.page;
     if (filters?.limit) params.limit = filters.limit;
-    
+
     const response = await api.get('/events', { params });
-    return response.data;
+
+    // Map backend response to frontend interface
+    const mappedEvents = response.data.events?.map((event: any) => ({
+      ...event,
+      date: event.eventDate, // Map eventDate to date
+      time: event.time,
+      organizer: {
+        ...event.organizer,
+        avatar: event.organizer.avatarUrl, // Map avatarUrl to avatar
+      },
+      attendees: event.currentAttendees || 0, // Map currentAttendees to attendees
+      maxAttendees: event.maxAttendees,
+      attending: event.isAttending, // Map isAttending to attending
+    })) || [];
+
+    return {
+      ...response.data,
+      events: mappedEvents
+    };
   },
 
   // Get single event

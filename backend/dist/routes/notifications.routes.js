@@ -12,6 +12,18 @@ router.post('/test', notifications_controller_1.notificationsController.sendTest
 router.post('/send', notifications_controller_1.notificationsController.sendNotificationToUser);
 // Send notification to multiple users
 router.post('/send-multiple', notifications_controller_1.notificationsController.sendNotificationToUsers);
+// Get user's notifications
+router.get('/', notifications_controller_1.notificationsController.getNotifications);
+// Mark notification as read
+router.put('/:notificationId/read', notifications_controller_1.notificationsController.markAsRead);
+// Delete all notifications (must come before parameterized route)
+router.delete('/all', notifications_controller_1.notificationsController.deleteAllNotifications);
+// Delete notification (when user interacts with it)
+router.delete('/:notificationId', notifications_controller_1.notificationsController.deleteNotification);
+// Mark all notifications as read
+router.put('/read-all', notifications_controller_1.notificationsController.markAllAsRead);
+// Delete read notifications (older than X days)
+router.delete('/delete-read', notifications_controller_1.notificationsController.deleteReadNotifications);
 // Get notification preferences
 router.get('/preferences', notifications_controller_1.notificationsController.getNotificationPreferences);
 // Update notification preferences

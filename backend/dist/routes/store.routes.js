@@ -7,7 +7,8 @@ const auth_middleware_1 = require("../middleware/auth.middleware");
 const router = (0, express_1.Router)();
 router.get('/items', auth_middleware_1.authenticate, store_controller_1.getStoreItems);
 router.get('/items/:itemId', auth_middleware_1.authenticate, store_controller_1.getStoreItem);
-router.post('/items', auth_middleware_1.authenticate, [
+// Creating store items requires premium
+router.post('/items', auth_middleware_1.authenticate, auth_middleware_1.requirePremium, [
     (0, express_validator_1.body)('name').trim().notEmpty().isLength({ max: 255 }),
     (0, express_validator_1.body)('price').isFloat({ min: 0.01 }),
     (0, express_validator_1.body)('category').isIn(['clothing', 'shoes', 'accessories', 'bags', 'jewelry']),

@@ -68,8 +68,9 @@ exports.subscriptionsController = {
                 });
             }
             const user = userResult.rows[0];
-            const isPremium = user.subscription_tier === 'premium';
-            const isTrial = user.subscription_tier === 'trial';
+            const tier = user.subscription_tier;
+            const isPremium = tier === 'premium' || tier === 'admin';
+            const isTrial = tier === 'trial';
             // Get active subscription if premium
             let subscription = null;
             if (isPremium) {
@@ -105,7 +106,7 @@ exports.subscriptionsController = {
             }
             res.json({
                 success: true,
-                status: user.subscription_tier,
+                status: tier,
                 isPremium,
                 isTrial,
                 trialDaysLeft: isTrial ? trialDaysLeft : null,
@@ -118,6 +119,58 @@ exports.subscriptionsController = {
                 success: false,
                 error: 'Failed to fetch subscription status'
             });
+        }
+    },
+    // Dev/Mock upgrade endpoint to activate premium immediately
+    upgrade: async (req, res) => {
+        try {
+            const userId = req.user.id;
+            const { plan = 'weekly' } = req.body || {};
+            const startsAt = new Date();
+            const expiresAt = new Date(startsAt);
+            if (plan === 'monthly') {
+                expiresAt.setDate(expiresAt.getDate() + 30);
+            }
+            else {
+                expiresAt.setDate(expiresAt.getDate() + 7);
+            }
+            // Insert subscription record
+            await database_1.pgPool.query(`
+        INSERT INTO subscriptions (user_id, plan_type, amount, payment_method, payment_reference, status, starts_at, expires_at)
+        VALUES ($1, $2, $3, $4, $5, 'active', $6, $7)
+      `, [
+                userId,
+                plan,
+                plan === 'monthly' ? config_1.CONFIG.PREMIUM_WEEKLY_PRICE * 4 * 0.85 : config_1.CONFIG.PREMIUM_WEEKLY_PRICE,
+                'manual',
+                'upgrade_dev',
+                startsAt,
+                expiresAt,
+            ]);
+            // Update user tier
+            await database_1.pgPool.query(`
+        UPDATE users
+        SET subscription_tier = 'premium',
+            subscription_expires_at = $1,
+            updated_at = CURRENT_TIMESTAMP
+        WHERE id = $2
+      `, [expiresAt, userId]);
+            res.json({
+                success: true,
+                status: 'premium',
+                isPremium: true,
+                subscription: {
+                    planType: plan,
+                    amount: plan === 'monthly' ? config_1.CONFIG.PREMIUM_WEEKLY_PRICE * 4 * 0.85 : config_1.CONFIG.PREMIUM_WEEKLY_PRICE,
+                    startsAt,
+                    expiresAt,
+                    status: 'active'
+                }
+            });
+        }
+        catch (error) {
+            console.error('Upgrade Error:', error);
+            res.status(500).json({ success: false, error: 'Failed to upgrade' });
         }
     }
 };

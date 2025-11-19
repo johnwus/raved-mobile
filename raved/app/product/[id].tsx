@@ -110,8 +110,8 @@ export default function ProductDetailScreen() {
 
   return (
     <SafeAreaView style={styles.container}>
-      {/* Header */}
-      <View style={styles.header}>
+        {/* Header */}
+        <View style={styles.header}>
         <TouchableOpacity onPress={() => router.back()}>
           <Ionicons name="arrow-back" size={24} color="#111827" />
         </TouchableOpacity>
@@ -140,7 +140,7 @@ export default function ProductDetailScreen() {
             style={styles.mainImage}
             resizeMode="cover"
           />
-          
+
           {/* Condition Badge */}
           <View style={styles.conditionBadge}>
             <Text style={styles.conditionText}>
@@ -188,10 +188,10 @@ export default function ProductDetailScreen() {
             </View>
             <View style={styles.badgesRow}>
               <View style={styles.sizeBadge}>
-                <Text style={styles.sizeBadgeText}>Size {product.size}</Text>
+                <Text style={styles.sizeBadgeText}>Size {String(product.size)}</Text>
               </View>
               <View style={styles.categoryBadge}>
-                <Text style={styles.categoryBadgeText}>{product.category}</Text>
+                <Text style={styles.categoryBadgeText}>{String(product.category)}</Text>
               </View>
             </View>
           </View>
@@ -214,13 +214,13 @@ export default function ProductDetailScreen() {
                     {product.seller.rating && (
                       <View style={styles.sellerStat}>
                         <Ionicons name="star" size={12} color="#F59E0B" />
-                        <Text style={styles.sellerStatText}>{product.seller.rating}</Text>
+                        <Text style={styles.sellerStatText}>{product.seller.rating.toString()}</Text>
                       </View>
                     )}
                     {product.seller.itemsSold && (
                       <View style={styles.sellerStat}>
                         <Ionicons name="cube" size={12} color="#6B7280" />
-                        <Text style={styles.sellerStatText}>{product.seller.itemsSold} sold</Text>
+                        <Text style={styles.sellerStatText}>{product.seller.itemsSold.toString()} sold</Text>
                       </View>
                     )}
                   </View>
@@ -263,7 +263,7 @@ export default function ProductDetailScreen() {
               </View>
               <View style={styles.detailRow}>
                 <Text style={styles.detailLabel}>Size:</Text>
-                <Text style={styles.detailValue}>{product.size}</Text>
+                <Text style={styles.detailValue}>{String(product.size)}</Text>
               </View>
               <View style={styles.detailRow}>
                 <Text style={styles.detailLabel}>Condition:</Text>
@@ -273,26 +273,28 @@ export default function ProductDetailScreen() {
               </View>
               <View style={styles.detailRow}>
                 <Text style={styles.detailLabel}>Category:</Text>
-                <Text style={styles.detailValue}>{product.category}</Text>
+                <Text style={styles.detailValue}>{String(product.category)}</Text>
               </View>
             </View>
           </View>
 
           {/* Stats */}
-          <View style={styles.statsRow}>
-            <View style={styles.stat}>
-              <Ionicons name="heart" size={14} color="#6B7280" />
-              <Text style={styles.statText}>{product.stats.likes} likes</Text>
+          {product.stats && (
+            <View style={styles.statsRow}>
+              <View style={styles.stat}>
+                <Ionicons name="heart" size={14} color="#6B7280" />
+                <Text style={styles.statText}>{(product.stats.likes || 0).toString()} likes</Text>
+              </View>
+              <View style={styles.stat}>
+                <Ionicons name="eye" size={14} color="#6B7280" />
+                <Text style={styles.statText}>{(product.stats.views || 0).toString()} views</Text>
+              </View>
+              <View style={styles.stat}>
+                <Ionicons name="bookmark" size={14} color="#6B7280" />
+                <Text style={styles.statText}>{(product.stats.saves || 0).toString()} saved</Text>
+              </View>
             </View>
-            <View style={styles.stat}>
-              <Ionicons name="eye" size={14} color="#6B7280" />
-              <Text style={styles.statText}>{product.stats.views} views</Text>
-            </View>
-            <View style={styles.stat}>
-              <Ionicons name="bookmark" size={14} color="#6B7280" />
-              <Text style={styles.statText}>{product.stats.saves} saved</Text>
-            </View>
-          </View>
+          )}
 
           {/* Action Buttons */}
           <View style={styles.actionButtons}>
@@ -345,16 +347,16 @@ export default function ProductDetailScreen() {
                     style={styles.similarItem}
                     onPress={() => router.push(`/product/${item.id}` as any)}
                   >
-                    <Image source={{ uri: item.images[0] }} style={styles.similarImage} />
+                    <Image source={{ uri: item.images?.[0] || '' }} style={styles.similarImage} />
                     <View style={styles.similarInfo}>
                       <Text style={styles.similarName} numberOfLines={1}>
-                        {item.name}
+                        {item.name || 'Unnamed Item'}
                       </Text>
                       <View style={styles.similarPriceRow}>
                         <Text style={styles.similarPrice}>
                           {formatCurrency(item.price, 'GHS')}
                         </Text>
-                        <Text style={styles.similarSize}>Size {item.size}</Text>
+                        <Text style={styles.similarSize}>Size {item.size || 'N/A'}</Text>
                       </View>
                     </View>
                   </TouchableOpacity>

@@ -63,62 +63,87 @@ export function pageViewTracker(req: Request, res: Response, next: NextFunction)
       const userAgent = req.get('User-Agent') || '';
       const deviceInfo = parseUserAgent(userAgent);
 
-      await pgPool.query(`
-        INSERT INTO analytics_events (
-          user_id, session_id, event_type, event_category, event_action,
-          page_url, page_title, referrer, user_agent, ip_address,
-          device_type, browser, os, screen_resolution, viewport_size,
-          event_value, timestamp, metadata
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
-      `, [
-        userId,
-        sessionId,
-        'page_view',
-        'engagement',
-        'view',
-        req.originalUrl,
-        req.route?.path || req.originalUrl,
-        req.get('Referer'),
-        userAgent,
-        req.ip,
-        deviceInfo.deviceType,
-        deviceInfo.browser,
-        deviceInfo.os,
-        req.headers['x-screen-resolution'] as string,
-        req.headers['x-viewport-size'] as string,
-        duration,
-        new Date(),
-        {
-          method: req.method,
-          statusCode: res.statusCode,
-          responseTime: duration,
-          query: req.query,
-          headers: {
-            accept: req.get('Accept'),
-            acceptLanguage: req.get('Accept-Language'),
-            cacheControl: req.get('Cache-Control')
+      // Retry logic for analytics insertion
+      let retries = 3;
+      while (retries > 0) {
+        try {
+          await pgPool.query(`
+            INSERT INTO analytics_events (
+              user_id, session_id, event_type, event_category, event_action,
+              page_url, page_title, referrer, user_agent, ip_address,
+              device_type, browser, os, screen_resolution, viewport_size,
+              event_value, timestamp, metadata
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
+          `, [
+            userId,
+            sessionId,
+            'page_view',
+            'engagement',
+            'view',
+            req.originalUrl,
+            req.route?.path || req.originalUrl,
+            req.get('Referer'),
+            userAgent,
+            req.ip,
+            deviceInfo.deviceType,
+            deviceInfo.browser,
+            deviceInfo.os,
+            req.headers['x-screen-resolution'] as string,
+            req.headers['x-viewport-size'] as string,
+            duration,
+            new Date(),
+            {
+              method: req.method,
+              statusCode: res.statusCode,
+              responseTime: duration,
+              query: req.query,
+              headers: {
+                accept: req.get('Accept'),
+                acceptLanguage: req.get('Accept-Language'),
+                cacheControl: req.get('Cache-Control')
+              }
+            }
+          ]);
+          break; // Success
+        } catch (dbError: any) {
+          retries--;
+          if (retries === 0 || !dbError.message?.includes('Connection terminated')) {
+            throw dbError;
           }
+          await new Promise(resolve => setTimeout(resolve, 100));
         }
-      ]);
+      }
 
       // Update user activity log if user is authenticated
       if (userId) {
-        await pgPool.query(`
-          INSERT INTO user_activity_logs (
-            user_id, activity_type, activity_data, ip_address, user_agent, timestamp
-          ) VALUES ($1, $2, $3, $4, $5, $6)
-        `, [
-          userId,
-          'page_view',
-          {
-            page: req.originalUrl,
-            duration,
-            sessionId
-          },
-          req.ip,
-          userAgent,
-          new Date()
-        ]);
+        retries = 3;
+        while (retries > 0) {
+          try {
+            await pgPool.query(`
+              INSERT INTO user_activity_logs (
+                user_id, activity_type, activity_data, ip_address, user_agent, timestamp
+              ) VALUES ($1, $2, $3, $4, $5, $6)
+            `, [
+              userId,
+              'page_view',
+              {
+                page: req.originalUrl,
+                duration,
+                sessionId
+              },
+              req.ip,
+              userAgent,
+              new Date()
+            ]);
+            break; // Success
+          } catch (dbError: any) {
+            retries--;
+            if (retries === 0 || !dbError.message?.includes('Connection terminated')) {
+              throw dbError;
+            }
+            await new Promise(resolve => setTimeout(resolve, 100));
+          }
+        }
       }
 
     } catch (error) {

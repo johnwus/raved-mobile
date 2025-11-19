@@ -73,7 +73,7 @@ class CacheService {
         }
     }
     /**
-     * Check if key exists in cache
+     * Check if keys exists in cache
      */
     static async exists(key, options = {}) {
         try {
@@ -237,7 +237,7 @@ class CacheService {
         }
     }
     /**
-     * Build full cache key with prefix
+     * Build full cache keys with prefix
      */
     static buildKey(key, prefix) {
         const fullPrefix = prefix || config_1.CONFIG.REDIS_CACHE_PREFIX || 'raved:';
@@ -259,7 +259,7 @@ class CacheService {
         }
     }
     /**
-     * Get cache TTL for a key
+     * Get cache TTL for a keys
      */
     static async getTTL(key, options = {}) {
         try {
@@ -273,7 +273,7 @@ class CacheService {
         }
     }
     /**
-     * Extend TTL for a key
+     * Extend TTL for a keys
      */
     static async extendTTL(key, additionalSeconds, options = {}) {
         try {

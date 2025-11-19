@@ -39,7 +39,7 @@ exports.themeController = {
         try {
             const { themeId } = req.body;
             const userId = req.user.id;
-            const isPremiumUser = req.user.subscription_tier === 'premium';
+            const isPremiumUser = req.user.subscription_tier === 'premium' || req.user.role === 'admin';
             const updatedThemeId = await theme_service_1.themeService.setUserTheme(userId, themeId, isPremiumUser);
             res.json({ success: true, message: 'Theme updated successfully', themeId: updatedThemeId });
         }

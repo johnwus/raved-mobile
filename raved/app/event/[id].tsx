@@ -55,10 +55,11 @@ export default function EventDetailScreen() {
     // TODO: Update event in store/state
   };
 
+  // Handle missing date safely
   const isFull = event.maxAttendees ? event.attendees >= event.maxAttendees : false;
-  const dateParts = event.date.split('-');
+  const dateParts = event.date ? event.date.split('-') : ['2025', '01', '01'];
   const _month = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][parseInt(dateParts[1]) - 1];
-  const _day = parseInt(dateParts[2]);
+  const _day = parseInt(dateParts[2]) || 1;
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>

@@ -3,7 +3,160 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.notificationsController = void 0;
 const push_notification_service_1 = require("../services/push-notification.service");
 const notification_model_1 = require("../models/mongoose/notification.model");
+const notification_preference_model_1 = require("../models/mongoose/notification-preference.model");
+const utils_1 = require("../utils");
+const database_1 = require("../config/database");
 exports.notificationsController = {
+    // Get user's notifications
+    getNotifications: async (req, res) => {
+        try {
+            const userId = req.user.id;
+            const page = parseInt(req.query.page) || 1;
+            const limit = parseInt(req.query.limit) || 20;
+            const skip = (page - 1) * limit;
+            // Get notifications from MongoDB (where they're actually created)
+            const notifications = await notification_model_1.Notification.find({ userId })
+                .sort({ createdAt: -1 })
+                .skip(skip)
+                .limit(limit)
+                .lean();
+            // Get total count
+            const total = await notification_model_1.Notification.countDocuments({ userId });
+            // Get unread count
+            const unreadCount = await notification_model_1.Notification.countDocuments({ userId, isRead: false });
+            const formattedNotifications = notifications.map((notif) => {
+                // Build user object if actorName is available
+                const user = notif.actorName ? {
+                    id: notif.actorId,
+                    name: notif.actorName,
+                    avatar: notif.actorAvatar || 'https://api.raved.com/default-avatar.png'
+                } : undefined;
+                // Build rich message based on notification type
+                let enrichedMessage = notif.message;
+                if (notif.data) {
+                    // Enhance message with item details if available
+                    if (notif.data.itemTitle) {
+                        enrichedMessage = `${notif.message} "${notif.data.itemTitle}"`;
+                    }
+                    if (notif.data.postTitle && !enrichedMessage.includes('post')) {
+                        enrichedMessage = `${notif.message}: "${notif.data.postTitle}"`;
+                    }
+                }
+                return {
+                    id: notif._id,
+                    type: notif.type,
+                    title: notif.title,
+                    message: enrichedMessage,
+                    user,
+                    isRead: notif.isRead,
+                    readAt: notif.readAt,
+                    createdAt: notif.createdAt,
+                    postId: notif.referenceType === 'post' ? notif.referenceId : (notif.data?.postId || undefined),
+                    itemId: notif.referenceType === 'item' ? notif.referenceId : (notif.data?.itemId || undefined),
+                    eventId: notif.referenceType === 'event' ? notif.referenceId : (notif.data?.eventId || undefined),
+                    commentId: notif.referenceType === 'comment' ? notif.referenceId : (notif.data?.commentId || undefined),
+                    data: notif.data,
+                };
+            });
+            res.json({
+                notifications: formattedNotifications,
+                unreadCount,
+                pagination: {
+                    total,
+                    page,
+                    limit,
+                    hasMore: skip + limit < total,
+                },
+            });
+        }
+        catch (error) {
+            console.error('Get Notifications Error:', error);
+            res.status(500).json({ error: 'Failed to get notifications' });
+        }
+    },
+    // Mark notification as read (legacy - kept for compatibility)
+    markAsRead: async (req, res) => {
+        try {
+            const userId = req.user.id;
+            const { notificationId } = req.params;
+            const result = await notification_model_1.Notification.findByIdAndUpdate(notificationId, { isRead: true, readAt: new Date() }, { new: true });
+            if (!result) {
+                return res.status(404).json({ success: false, error: 'Notification not found' });
+            }
+            // Verify notification belongs to user for security
+            if (result.userId !== userId) {
+                return res.status(403).json({ success: false, error: 'Unauthorized' });
+            }
+            res.json({ success: true, notification: result });
+        }
+        catch (error) {
+            console.error('Mark Notification as Read Error:', error);
+            res.status(500).json({ error: 'Failed to mark notification as read' });
+        }
+    },
+    // Delete notification (when user interacts with it)
+    deleteNotification: async (req, res) => {
+        try {
+            const userId = req.user.id;
+            const { notificationId } = req.params;
+            const result = await notification_model_1.Notification.findByIdAndDelete(notificationId);
+            if (!result) {
+                return res.status(404).json({ success: false, error: 'Notification not found' });
+            }
+            // Verify notification belongs to user for security
+            if (result.userId !== userId) {
+                return res.status(403).json({ success: false, error: 'Unauthorized' });
+            }
+            res.json({ success: true, deletedId: notificationId });
+        }
+        catch (error) {
+            console.error('Delete Notification Error:', error);
+            res.status(500).json({ error: 'Failed to delete notification' });
+        }
+    },
+    // Mark all notifications as read
+    markAllAsRead: async (req, res) => {
+        try {
+            const userId = req.user.id;
+            const result = await notification_model_1.Notification.updateMany({ userId, isRead: false }, { isRead: true, readAt: new Date() });
+            res.json({ success: true, modifiedCount: result.modifiedCount });
+        }
+        catch (error) {
+            console.error('Mark All Notifications as Read Error:', error);
+            res.status(500).json({ error: 'Failed to mark all notifications as read' });
+        }
+    },
+    // Delete all notifications (when user clears all)
+    deleteAllNotifications: async (req, res) => {
+        try {
+            const userId = req.user.id;
+            const result = await notification_model_1.Notification.deleteMany({ userId });
+            res.json({ success: true, deletedCount: result.deletedCount });
+        }
+        catch (error) {
+            console.error('Delete All Notifications Error:', error);
+            res.status(500).json({ error: 'Failed to delete all notifications' });
+        }
+    },
+    // Delete read notifications (for cleanup)
+    deleteReadNotifications: async (req, res) => {
+        try {
+            const userId = req.user.id;
+            const daysOld = parseInt(req.query.daysOld) || 7; // Delete read notifications older than 7 days
+            const cutoffDate = new Date();
+            cutoffDate.setDate(cutoffDate.getDate() - daysOld);
+            const result = await notification_model_1.Notification.deleteMany({
+                userId,
+                isRead: true,
+                readAt: { $lt: cutoffDate }
+            });
+            res.json({ success: true, deletedCount: result.deletedCount });
+        }
+        catch (error) {
+            console.error('Delete Read Notifications Error:', error);
+            res.status(500).json({ error: 'Failed to delete read notifications' });
+        }
+    },
     // Send test notification to user
     sendTestNotification: async (req, res) => {
         try {
@@ -69,24 +222,40 @@ exports.notificationsController = {
     getNotificationPreferences: async (req, res) => {
         try {
             const userId = req.user.id;
-            // For now, return default preferences
-            // In a real implementation, you'd fetch from database
-            const preferences = {
-                pushEnabled: true,
-                likes: true,
-                comments: true,
-                follows: true,
-                mentions: true,
-                messages: true,
-                events: true,
-                sales: true,
-                marketing: false,
-                soundEnabled: true,
-                vibrationEnabled: true,
-            };
+            // Try to get preferences from MongoDB
+            let preferences = await notification_preference_model_1.NotificationPreference.findOne({ userId });
+            // If not found, create default preferences
+            if (!preferences) {
+                preferences = await notification_preference_model_1.NotificationPreference.create({
+                    userId,
+                    pushEnabled: true,
+                    likes: true,
+                    comments: true,
+                    follows: true,
+                    mentions: true,
+                    messages: true,
+                    events: true,
+                    sales: true,
+                    marketing: false,
+                    soundEnabled: true,
+                    vibrationEnabled: true,
+                });
+            }
             res.json({
                 success: true,
-                preferences
+                preferences: {
+                    pushEnabled: preferences.pushEnabled,
+                    likes: preferences.likes,
+                    comments: preferences.comments,
+                    follows: preferences.follows,
+                    mentions: preferences.mentions,
+                    messages: preferences.messages,
+                    events: preferences.events,
+                    sales: preferences.sales,
+                    marketing: preferences.marketing,
+                    soundEnabled: preferences.soundEnabled,
+                    vibrationEnabled: preferences.vibrationEnabled,
+                }
             });
         }
         catch (error) {
@@ -98,38 +267,134 @@ exports.notificationsController = {
     updateNotificationPreferences: async (req, res) => {
         try {
             const userId = req.user.id;
-            const { preferences } = req.body;
+            let preferences;
+            console.log('📝 Raw request body:', req.body);
+            // Check if preferences are sent directly in body or wrapped in preferences key
+            if (req.body.preferences !== undefined) {
+                preferences = req.body.preferences;
+                console.log('📝 Preferences from req.body.preferences:', preferences, 'type:', typeof preferences);
+            }
+            else {
+                // Check if the body itself is the preferences object
+                const bodyKeys = Object.keys(req.body);
+                const preferenceKeys = ['pushEnabled', 'likes', 'comments', 'follows', 'mentions', 'messages', 'events', 'sales', 'marketing', 'soundEnabled', 'vibrationEnabled'];
+                const hasPreferenceKeys = preferenceKeys.some(key => bodyKeys.includes(key));
+                if (hasPreferenceKeys && typeof req.body === 'object') {
+                    preferences = req.body;
+                    console.log('📝 Preferences from req.body directly:', preferences, 'type:', typeof preferences);
+                }
+                else {
+                    preferences = req.body.preferences;
+                    console.log('📝 Preferences fallback:', preferences, 'type:', typeof preferences);
+                }
+            }
+            // Handle if preferences is stringified
+            if (typeof preferences === 'string') {
+                console.log('⚠️  Preferences is a string, attempting to parse');
+                try {
+                    preferences = JSON.parse(preferences);
+                }
+                catch (e) {
+                    console.error('❌ Failed to parse preferences string:', e);
+                    return res.status(400).json({
+                        success: false,
+                        error: 'Preferences must be a valid object'
+                    });
+                }
+            }
             if (!preferences || typeof preferences !== 'object') {
+                console.error('❌ Preferences validation failed:', { preferences, type: typeof preferences });
                 return res.status(400).json({
+                    success: false,
                     error: 'Preferences object is required'
                 });
             }
-            // In a real implementation, you'd save to database
-            // For now, just validate and return success
+            // Valid preference keys
             const validKeys = [
                 'pushEnabled', 'likes', 'comments', 'follows', 'mentions',
                 'messages', 'events', 'sales', 'marketing', 'soundEnabled', 'vibrationEnabled'
             ];
-            const filteredPreferences = {};
+            // Create update object with only valid keys and boolean values (or string representations)
+            const updateData = {};
             for (const key of validKeys) {
-                if (typeof preferences[key] === 'boolean') {
-                    filteredPreferences[key] = preferences[key];
+                if (key in preferences) {
+                    const value = preferences[key];
+                    // Accept boolean values or string representations of booleans
+                    if (typeof value === 'boolean') {
+                        updateData[key] = value;
+                    }
+                    else if (typeof value === 'string') {
+                        if (value === 'true') {
+                            updateData[key] = true;
+                        }
+                        else if (value === 'false') {
+                            updateData[key] = false;
+                        }
+                        // Ignore other string values
+                    }
                 }
             }
+            console.log('🔄 Update data:', updateData);
+            if (Object.keys(updateData).length === 0) {
+                return res.status(400).json({
+                    success: false,
+                    error: 'No valid boolean preferences provided'
+                });
+            }
+            // Update or create preferences
+            const updatedPreferences = await notification_preference_model_1.NotificationPreference.findOneAndUpdate({ userId }, updateData, { new: true, upsert: true });
+            console.log('✅ Preferences updated:', updatedPreferences);
             res.json({
                 success: true,
                 message: 'Notification preferences updated successfully',
-                preferences: filteredPreferences
+                preferences: {
+                    pushEnabled: updatedPreferences.pushEnabled,
+                    likes: updatedPreferences.likes,
+                    comments: updatedPreferences.comments,
+                    follows: updatedPreferences.follows,
+                    mentions: updatedPreferences.mentions,
+                    messages: updatedPreferences.messages,
+                    events: updatedPreferences.events,
+                    sales: updatedPreferences.sales,
+                    marketing: updatedPreferences.marketing,
+                    soundEnabled: updatedPreferences.soundEnabled,
+                    vibrationEnabled: updatedPreferences.vibrationEnabled,
+                }
             });
         }
         catch (error) {
-            console.error('Update Notification Preferences Error:', error);
-            res.status(500).json({ error: 'Failed to update notification preferences' });
+            console.error('❌ Update Notification Preferences Error:', error);
+            res.status(500).json({
+                success: false,
+                error: 'Failed to update notification preferences',
+                details: error instanceof Error ? error.message : String(error)
+            });
         }
     },
     // Create notification
     createNotification: async (userId, type, title, message, actorId, data) => {
         try {
+            let actorName;
+            let actorAvatar;
+            // Fetch actor information if actorId is provided
+            if (actorId) {
+                try {
+                    const actorResult = await database_1.pgPool.query(`
+            SELECT first_name, last_name, avatar_url
+            FROM users
+            WHERE id = $1 AND deleted_at IS NULL
+          `, [actorId]);
+                    if (actorResult.rows.length > 0) {
+                        const actor = actorResult.rows[0];
+                        actorName = `${actor.first_name} ${actor.last_name}`.trim();
+                        actorAvatar = (0, utils_1.getAvatarUrl)(actor.avatar_url, actorId);
+                    }
+                }
+                catch (error) {
+                    console.warn('Failed to fetch actor info:', error);
+                    // Continue without actor info
+                }
+            }
             // Create notification record in database
             const notification = await notification_model_1.Notification.create({
                 userId,
@@ -137,6 +402,8 @@ exports.notificationsController = {
                 title,
                 message,
                 actorId,
+                actorName,
+                actorAvatar,
                 data
             });
             // Send push notification

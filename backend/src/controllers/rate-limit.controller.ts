@@ -201,7 +201,7 @@ export const getActiveOverrides = async (req: Request, res: Response): Promise<v
 };
 
 /**
- * Reset rate limit for a specific key (Admin only)
+ * Reset rate limit for a specific keys (Admin only)
  */
 export const resetRateLimit = async (req: Request, res: Response): Promise<void> => {
   try {

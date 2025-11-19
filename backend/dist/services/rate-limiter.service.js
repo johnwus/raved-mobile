@@ -138,7 +138,7 @@ class RateLimiterService {
         this.endpointLimits.set(endpoint, config);
     }
     /**
-     * Get current rate limit status for a key
+     * Get current rate limit status for a keys
      */
     async getRateLimitStatus(key, tier) {
         try {
@@ -157,7 +157,7 @@ class RateLimiterService {
         }
     }
     /**
-     * Reset rate limit for a key
+     * Reset rate limit for a keys
      */
     async resetRateLimit(key, tier) {
         try {

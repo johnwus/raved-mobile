@@ -31,8 +31,8 @@ function initializeBackgroundJobs() {
     cron.schedule('0 4 * * *', checkSubscriptionExpirations);
     // Send weekly digest emails every Monday at 9 AM
     cron.schedule('0 9 * * 1', sendWeeklyDigests);
-    // Clean up old notifications weekly
-    cron.schedule('0 5 * * 0', cleanupOldNotifications);
+    // Clean up old notifications every 6 hours and after read actions
+    cron.schedule('0 */6 * * *', cleanupOldNotifications);
     // Analytics jobs
     // Aggregate daily metrics every day at 1 AM
     cron.schedule('0 1 * * *', analytics_cron_1.AnalyticsCronJobs.aggregateDailyMetrics);
@@ -376,13 +376,42 @@ async function sendWeeklyDigests() {
 // Clean up old notifications
 async function cleanupOldNotifications() {
     try {
-        const cutoffDate = new Date();
-        cutoffDate.setDate(cutoffDate.getDate() - 30); // Keep 30 days
-        const result = await notification_model_1.Notification.deleteMany({
-            createdAt: { $lt: cutoffDate },
+        // Delete read notifications older than 7 days
+        const cutoffDateOld = new Date();
+        cutoffDateOld.setDate(cutoffDateOld.getDate() - 7);
+        const resultOld = await notification_model_1.Notification.deleteMany({
+            createdAt: { $lt: cutoffDateOld },
             isRead: true
         });
-        console.log(`🗑️ Cleaned up ${result.deletedCount} old notifications`);
+        // Also delete ALL read notifications for a specific referenceId if all are read
+        // This helps keep the DB clean after user has interacted with content
+        const readGroupStats = await notification_model_1.Notification.aggregate([
+            {
+                $match: {
+                    isRead: true,
+                    referenceId: { $exists: true }
+                }
+            },
+            {
+                $group: {
+                    _id: { referenceId: '$referenceId', referenceType: '$referenceType', userId: '$userId' },
+                    count: { $sum: 1 }
+                }
+            }
+        ]);
+        for (const group of readGroupStats) {
+            // Delete all read notifications for this reference if they're older than 1 day
+            const oneDayAgo = new Date();
+            oneDayAgo.setDate(oneDayAgo.getDate() - 1);
+            const resultRecent = await notification_model_1.Notification.deleteMany({
+                referenceId: group._id.referenceId,
+                referenceType: group._id.referenceType,
+                userId: group._id.userId,
+                isRead: true,
+                readAt: { $lt: oneDayAgo }
+            });
+        }
+        console.log(`🗑️ Cleaned up ${resultOld.deletedCount} old notifications`);
     }
     catch (error) {
         console.error('Notification cleanup error:', error);

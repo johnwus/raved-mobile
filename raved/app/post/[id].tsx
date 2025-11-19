@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useMemo } from 'react';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { View, Text, Image, StyleSheet, FlatList, TouchableOpacity, ScrollView } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
@@ -8,8 +8,7 @@ import { theme } from '../../theme';
 import { Avatar } from '../../components/ui/Avatar';
 import { usePostsStore } from '../../store/postsStore';
 import { SkeletonLoader } from '../../components/ui/SkeletonLoader';
-import { VideoView } from 'expo-video';
-const AnyVideo: any = VideoView;
+import { VideoView, useVideoPlayer } from 'expo-video';
 
 export default function PostDetailScreen() {
   const { id } = useLocalSearchParams();
@@ -17,6 +16,18 @@ export default function PostDetailScreen() {
   const [post, setPost] = useState<any | null>(null);
   const [loading, setLoading] = useState(true);
   const { likePost, unlikePost, savePost, unsavePost } = usePostsStore();
+
+  // Create video player only for video posts
+  const videoUrl = useMemo(() => {
+    return post?.media?.type === 'video' ? (post.media.url || post.media.thumbnail || '') : '';
+  }, [post?.media]);
+
+  const videoPlayer = useVideoPlayer(videoUrl, (player) => {
+    if (videoUrl) {
+      player.loop = false;
+      player.muted = false;
+    }
+  });
 
   useEffect(() => {
     const load = async () => {
@@ -69,13 +80,13 @@ export default function PostDetailScreen() {
     if (post.media?.type === 'video') {
       return (
         <View style={styles.videoContainer}>
-          <AnyVideo
-            style={styles.media}
-            source={{ uri: post.media.url || post.media.thumbnail }}
-            nativeControls
-            allowsFullscreen
-            allowsPictureInPicture
-          />
+          {videoPlayer && (
+            <VideoView
+              style={styles.media}
+              player={videoPlayer}
+              nativeControls={true}
+            />
+          )}
         </View>
       );
     }

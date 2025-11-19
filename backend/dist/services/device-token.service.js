@@ -13,8 +13,9 @@ class DeviceTokenService {
             const result = await database_1.pgPool.query(`
         INSERT INTO device_tokens (user_id, token, platform, device_id, app_version, active, last_used_at)
         VALUES ($1, $2, $3, $4, $5, true, CURRENT_TIMESTAMP)
-        ON CONFLICT (user_id, token)
+        ON CONFLICT (token)
         DO UPDATE SET
+          user_id = EXCLUDED.user_id,
           platform = EXCLUDED.platform,
           device_id = EXCLUDED.device_id,
           app_version = EXCLUDED.app_version,

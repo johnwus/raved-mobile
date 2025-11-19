@@ -85,10 +85,23 @@ export { io };
   // Security Middleware
   app.use(preventXSS);
   app.use(preventSQLInjection);
-  app.use(sanitizeInput);
+  
+  // Skip sanitizeInput for notification preferences to preserve object structure
+  app.use((req: Request, res: Response, next: NextFunction) => {
+    if (req.path.includes('notification-preferences')) {
+      console.log('⏭️  Skipping sanitizeInput for:', req.path);
+      return next();
+    }
+    // Apply sanitizeInput for all other routes
+    sanitizeInput[0](req, res, () => {
+      sanitizeInput[1](req, res, next);
+    });
+  });
 
-  // Rate Limiting
-  app.use(`/api/${CONFIG.API_VERSION}/`, apiLimiter);
+  // Rate Limiting (disabled in development for easier testing)
+  if (CONFIG.NODE_ENV === 'production') {
+    app.use(`/api/${CONFIG.API_VERSION}/`, apiLimiter);
+  }
 
   // Global error handler for validation
   app.use(handleValidationErrors);

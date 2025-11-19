@@ -9,4 +9,6 @@ const LikeSchema = new mongoose_1.Schema({
     createdAt: { type: Date, default: Date.now }
 });
 LikeSchema.index({ userId: 1, targetId: 1, targetType: 1 }, { unique: true });
+// Reverse lookup (who liked a post/comment) with recency
+LikeSchema.index({ targetType: 1, targetId: 1, createdAt: -1 });
 exports.Like = (0, mongoose_1.model)('Like', LikeSchema);

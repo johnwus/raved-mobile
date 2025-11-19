@@ -24,7 +24,7 @@ export const moderatePost = async (req: ModeratedRequest, res: Response, next: N
     const mediaUrls = media || [];
 
     // Generate a temporary content ID for moderation
-    const contentId = `temp_post_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    const contentId = `temp_post_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
 
     const moderationResult = await moderationQueueService.processContent(
       contentId,
@@ -69,7 +69,7 @@ export const moderateComment = async (req: ModeratedRequest, res: Response, next
     }
 
     // Generate a temporary content ID for moderation
-    const contentId = `temp_comment_${postId}_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    const contentId = `temp_comment_${postId}_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
 
     const moderationResult = await moderationQueueService.processContent(
       contentId,
@@ -95,7 +95,8 @@ export const moderateComment = async (req: ModeratedRequest, res: Response, next
     next();
   } catch (error) {
     console.error('Comment moderation error:', error);
-    // On moderation failure, allow content but log the error
+    // On moderation failure (like OpenAI API keys issues), allow content but log the error
+    // This prevents blocking legitimate comments when external services are down
     next();
   }
 };
@@ -112,7 +113,7 @@ export const moderateMessage = async (req: ModeratedRequest, res: Response, next
     }
 
     // Generate a temporary content ID for moderation
-    const contentId = `temp_message_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    const contentId = `temp_message_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
 
     const mediaUrls = mediaUrl ? [mediaUrl] : undefined;
 
@@ -169,7 +170,7 @@ export const moderateStory = async (req: ModeratedRequest, res: Response, next: 
     }
 
     // Generate a temporary content ID for moderation
-    const contentId = `temp_story_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    const contentId = `temp_story_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
 
     const moderationResult = await moderationQueueService.processContent(
       contentId,

@@ -14,7 +14,7 @@ exports.eventsController = {
             let query = `
         SELECT e.*, u.username, u.first_name, u.last_name, u.avatar_url,
                CASE WHEN ea.user_id IS NOT NULL THEN true ELSE false END as is_attending,
-               ea.created_at as joined_at
+               ea.registered_at as joined_at
         FROM events e
         JOIN users u ON e.organizer_id = u.id
         LEFT JOIN event_attendees ea ON e.id = ea.event_id AND ea.user_id = $1
@@ -87,7 +87,7 @@ exports.eventsController = {
             const result = await database_1.pgPool.query(`
         SELECT e.*, u.username, u.first_name, u.last_name, u.avatar_url,
                CASE WHEN ea.user_id IS NOT NULL THEN true ELSE false END as is_attending,
-               ea.created_at as joined_at
+               ea.registered_at as joined_at
         FROM events e
         JOIN users u ON e.organizer_id = u.id
         LEFT JOIN event_attendees ea ON e.id = ea.event_id AND ea.user_id = $1
@@ -100,11 +100,11 @@ exports.eventsController = {
             // Get attendees list
             const attendeesResult = await database_1.pgPool.query(`
         SELECT u.id, u.username, u.first_name, u.last_name, u.avatar_url, u.faculty,
-               ea.created_at as joined_at
+               ea.registered_at as joined_at
         FROM event_attendees ea
         JOIN users u ON ea.user_id = u.id
         WHERE ea.event_id = $1
-        ORDER BY ea.created_at ASC
+        ORDER BY ea.registered_at ASC
         LIMIT 50
       `, [eventId]);
             const attendees = attendeesResult.rows.map(attendee => ({

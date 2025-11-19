@@ -1,9 +1,55 @@
 "use strict";
+var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    var desc = Object.getOwnPropertyDescriptor(m, k);
+    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
+      desc = { enumerable: true, get: function() { return m[k]; } };
+    }
+    Object.defineProperty(o, k2, desc);
+}) : (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    o[k2] = m[k];
+}));
+var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
+    Object.defineProperty(o, "default", { enumerable: true, value: v });
+}) : function(o, v) {
+    o["default"] = v;
+});
+var __importStar = (this && this.__importStar) || (function () {
+    var ownKeys = function(o) {
+        ownKeys = Object.getOwnPropertyNames || function (o) {
+            var ar = [];
+            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
+            return ar;
+        };
+        return ownKeys(o);
+    };
+    return function (mod) {
+        if (mod && mod.__esModule) return mod;
+        var result = {};
+        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
+        __setModuleDefault(result, mod);
+        return result;
+    };
+})();
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.usersController = void 0;
 const database_1 = require("../config/database");
 const mongoose_1 = require("../models/mongoose");
 const utils_1 = require("../utils");
+// Helper function to get media URL based on post type
+function getMediaUrl(post) {
+    if (post.type === 'image') {
+        return post.media?.image || null;
+    }
+    else if (post.type === 'video') {
+        return post.media?.video || null;
+    }
+    else if (post.type === 'carousel' && post.media?.images && post.media.images.length > 0) {
+        return post.media.images[0]; // Use first image as primary URL
+    }
+    return null;
+}
 exports.usersController = {
     // Get user profile
     getProfile: async (req, res) => {
@@ -271,7 +317,7 @@ exports.usersController = {
                 caption: post.caption || '',
                 media: {
                     type: post.type,
-                    url: post.media?.image || post.media?.video,
+                    url: getMediaUrl(post),
                     thumbnail: post.media?.thumbnail,
                     items: post.media?.images || []
                 },
@@ -399,7 +445,7 @@ exports.usersController = {
                 caption: post.caption || '',
                 media: {
                     type: post.type,
-                    url: post.media?.image || post.media?.video,
+                    url: getMediaUrl(post),
                     thumbnail: post.media?.thumbnail,
                     items: post.media?.images || []
                 },
@@ -436,18 +482,66 @@ exports.usersController = {
     getUserSavedPosts: async (req, res) => {
         try {
             const { userId } = req.params;
+            const targetUserId = userId || req.user.id;
             const page = parseInt(req.query.page) || 1;
             const limit = parseInt(req.query.limit) || 20;
             const skip = (page - 1) * limit;
-            // TODO: Implement saved posts/bookmarks collection
-            // For now, return empty array
+            const saved = await (await Promise.resolve().then(() => __importStar(require('../models/mongoose')))).SavedPost.find({ userId: targetUserId })
+                .sort({ createdAt: -1 })
+                .skip(skip)
+                .limit(limit)
+                .lean();
+            const postIds = saved.map(s => s.postId);
+            if (postIds.length === 0) {
+                return res.json({ success: true, posts: [], pagination: { page, limit, hasMore: false } });
+            }
+            const posts = await (await Promise.resolve().then(() => __importStar(require('../models/mongoose')))).Post.find({
+                _id: { $in: postIds },
+                deletedAt: null
+            }).lean();
+            // Get user info for each post
+            const authorIds = [...new Set(posts.map(p => p.userId))];
+            const users = await database_1.pgPool.query(`
+        SELECT id, username, first_name, last_name, avatar_url, faculty
+        FROM users WHERE id = ANY($1)
+      `, [authorIds]);
+            const userMap = {};
+            users.rows.forEach(u => {
+                userMap[u.id] = {
+                    id: u.id,
+                    username: u.username,
+                    name: `${u.first_name} ${u.last_name}`,
+                    avatarUrl: u.avatar_url,
+                    faculty: u.faculty
+                };
+            });
+            const enrichedPosts = posts.map(post => ({
+                id: post._id.toString(),
+                user: userMap[post.userId] || { id: post.userId, name: 'Unknown User' },
+                caption: post.caption || '',
+                media: {
+                    type: post.type,
+                    url: getMediaUrl(post),
+                    thumbnail: post.media?.thumbnail,
+                    items: post.media?.images || []
+                },
+                tags: post.tags || [],
+                likes: post.likesCount || 0,
+                comments: post.commentsCount || 0,
+                shares: post.sharesCount || 0,
+                timeAgo: (0, utils_1.getTimeAgo)(post.createdAt),
+                liked: false,
+                saved: true,
+                forSale: post.isForSale,
+                price: post.saleDetails?.price,
+            }));
             res.json({
                 success: true,
-                posts: [],
+                posts: enrichedPosts,
                 pagination: {
                     page,
                     limit,
-                    hasMore: false
+                    hasMore: saved.length === limit
                 }
             });
         }
@@ -456,6 +550,436 @@ exports.usersController = {
             res.status(500).json({
                 success: false,
                 error: 'Failed to fetch saved posts'
+            });
+        }
+    },
+    // Get user connections (followers/following)
+    getConnections: async (req, res) => {
+        try {
+            const { userId } = req.params;
+            const targetUserId = userId || req.user.id;
+            const currentUserId = req.user.id;
+            const { type = 'all' } = req.query; // 'following', 'followers', 'all'
+            let following = [];
+            let followers = [];
+            if (type === 'all' || type === 'following') {
+                // Get users this user is following
+                const followingResult = await database_1.pgPool.query(`
+          SELECT c.created_at as connected_at, u.id, u.username, u.first_name, u.last_name, u.avatar_url, u.faculty
+          FROM connections c
+          JOIN users u ON c.following_id = u.id
+          WHERE c.follower_id = $1 AND c.status = 'accepted' AND u.deleted_at IS NULL
+          ORDER BY c.created_at DESC
+        `, [targetUserId]);
+                following = followingResult.rows.map(user => ({
+                    id: user.id,
+                    username: user.username,
+                    firstName: user.first_name,
+                    lastName: user.last_name,
+                    name: `${user.first_name} ${user.last_name}`,
+                    avatarUrl: user.avatar_url,
+                    faculty: user.faculty,
+                    isMutual: false, // Will be calculated below
+                    connectedAt: user.connected_at,
+                    isFollowing: true // Since we're getting following list
+                }));
+            }
+            if (type === 'all' || type === 'followers') {
+                // Get users following this user
+                const followersResult = await database_1.pgPool.query(`
+          SELECT c.created_at as connected_at, u.id, u.username, u.first_name, u.last_name, u.avatar_url, u.faculty
+          FROM connections c
+          JOIN users u ON c.follower_id = u.id
+          WHERE c.following_id = $1 AND c.status = 'accepted' AND u.deleted_at IS NULL
+          ORDER BY c.created_at DESC
+        `, [targetUserId]);
+                followers = followersResult.rows.map(user => ({
+                    id: user.id,
+                    username: user.username,
+                    firstName: user.first_name,
+                    lastName: user.last_name,
+                    name: `${user.first_name} ${user.last_name}`,
+                    avatarUrl: user.avatar_url,
+                    faculty: user.faculty,
+                    isMutual: false, // Will be calculated below
+                    connectedAt: user.connected_at,
+                    isFollowing: false // Check if current user follows this follower
+                }));
+                // Check mutual follows for followers
+                if (followers.length > 0 && currentUserId !== targetUserId) {
+                    const followerIds = followers.map(f => f.id);
+                    const mutualResult = await database_1.pgPool.query(`
+            SELECT following_id
+            FROM connections
+            WHERE follower_id = $1 AND following_id = ANY($2) AND status = 'accepted'
+          `, [currentUserId, followerIds]);
+                    const mutualIds = new Set(mutualResult.rows.map(r => r.following_id));
+                    followers.forEach(follower => {
+                        follower.isFollowing = mutualIds.has(follower.id);
+                    });
+                }
+            }
+            // Calculate mutual connections
+            if (type === 'all' && following.length > 0 && followers.length > 0) {
+                const followingIds = new Set(following.map(f => f.id));
+                followers.forEach(follower => {
+                    follower.isMutual = followingIds.has(follower.id);
+                });
+                following.forEach(followingUser => {
+                    const followerIds = new Set(followers.map(f => f.id));
+                    followingUser.isMutual = followerIds.has(followingUser.id);
+                });
+            }
+            res.json({
+                success: true,
+                following,
+                followers,
+                followingCount: following.length,
+                followersCount: followers.length
+            });
+        }
+        catch (error) {
+            console.error('Get Connections Error:', error);
+            res.status(500).json({
+                success: false,
+                error: 'Failed to fetch connections'
+            });
+        }
+    },
+    // Follow user
+    followUser: async (req, res) => {
+        try {
+            const followerId = req.user.id;
+            const { userId: followingId } = req.params;
+            const { connectionService } = await Promise.resolve().then(() => __importStar(require('../services/connection.service')));
+            const status = await connectionService.sendFollowRequest(followerId, followingId);
+            res.json({
+                success: true,
+                message: status === 'pending' ? 'Follow request sent' : 'Successfully followed user',
+                status
+            });
+        }
+        catch (error) {
+            console.error('Follow User Error:', error);
+            res.status(400).json({
+                success: false,
+                error: error.message || 'Failed to follow user'
+            });
+        }
+    },
+    // Unfollow user
+    unfollowUser: async (req, res) => {
+        try {
+            const followerId = req.user.id;
+            const { userId: followingId } = req.params;
+            // Check if connection exists
+            const connectionResult = await database_1.pgPool.query('SELECT id, status FROM connections WHERE follower_id = $1 AND following_id = $2', [followerId, followingId]);
+            if (connectionResult.rows.length === 0) {
+                return res.status(404).json({
+                    success: false,
+                    error: 'Connection not found'
+                });
+            }
+            // Delete connection
+            await database_1.pgPool.query('DELETE FROM connections WHERE follower_id = $1 AND following_id = $2', [followerId, followingId]);
+            // Update counts if it was an accepted connection
+            if (connectionResult.rows[0].status === 'accepted') {
+                await database_1.pgPool.query('UPDATE users SET following_count = GREATEST(0, following_count - 1) WHERE id = $1', [followerId]);
+                await database_1.pgPool.query('UPDATE users SET followers_count = GREATEST(0, followers_count - 1) WHERE id = $1', [followingId]);
+            }
+            res.json({
+                success: true,
+                message: 'Successfully unfollowed user'
+            });
+        }
+        catch (error) {
+            console.error('Unfollow User Error:', error);
+            res.status(500).json({
+                success: false,
+                error: 'Failed to unfollow user'
+            });
+        }
+    },
+    // Get user settings
+    getUserSettings: async (req, res) => {
+        try {
+            const userId = req.user.id;
+            // First, ensure all settings columns exist
+            await database_1.pgPool.query(`
+        ALTER TABLE users 
+        ADD COLUMN IF NOT EXISTS profile_visibility VARCHAR(20) DEFAULT 'public',
+        ADD COLUMN IF NOT EXISTS show_online_status BOOLEAN DEFAULT TRUE,
+        ADD COLUMN IF NOT EXISTS allow_messages VARCHAR(20) DEFAULT 'everyone',
+        ADD COLUMN IF NOT EXISTS language VARCHAR(10) DEFAULT 'en',
+        ADD COLUMN IF NOT EXISTS date_format VARCHAR(20) DEFAULT 'DD/MM/YYYY',
+        ADD COLUMN IF NOT EXISTS currency VARCHAR(10) DEFAULT 'GHS',
+        ADD COLUMN IF NOT EXISTS timezone VARCHAR(50) DEFAULT 'UTC',
+        ADD COLUMN IF NOT EXISTS analytics_enabled BOOLEAN DEFAULT TRUE,
+        ADD COLUMN IF NOT EXISTS personalized_ads_enabled BOOLEAN DEFAULT TRUE;
+      `);
+            const userResult = await database_1.pgPool.query(`
+        SELECT 
+          profile_visibility, show_online_status, allow_messages,
+          language, date_format, currency, timezone,
+          is_private, read_receipts, allow_downloads, allow_story_sharing,
+          analytics_enabled, personalized_ads_enabled
+        FROM users
+        WHERE id = $1
+      `, [userId]);
+            if (userResult.rows.length === 0) {
+                return res.status(404).json({
+                    success: false,
+                    error: 'User not found'
+                });
+            }
+            const user = userResult.rows[0];
+            res.json({
+                success: true,
+                settings: {
+                    profileVisibility: user.profile_visibility || 'public',
+                    showOnlineStatus: user.show_online_status !== false,
+                    allowMessages: user.allow_messages || 'everyone',
+                    language: user.language || 'en',
+                    dateFormat: user.date_format || 'DD/MM/YYYY',
+                    currency: user.currency || 'GHS',
+                    timezone: user.timezone || 'UTC',
+                    isPrivate: user.is_private || false,
+                    readReceipts: user.read_receipts !== false,
+                    allowDownloads: user.allow_downloads !== false,
+                    allowStorySharing: user.allow_story_sharing !== false,
+                    analytics: user.analytics_enabled !== false,
+                    personalizedAds: user.personalized_ads_enabled !== false,
+                }
+            });
+        }
+        catch (error) {
+            console.error('Get User Settings Error:', error);
+            res.status(500).json({
+                success: false,
+                error: 'Failed to fetch user settings'
+            });
+        }
+    },
+    // Update user settings
+    updateUserSettings: async (req, res) => {
+        try {
+            const userId = req.user.id;
+            // First, ensure all settings columns exist
+            await database_1.pgPool.query(`
+        ALTER TABLE users 
+        ADD COLUMN IF NOT EXISTS profile_visibility VARCHAR(20) DEFAULT 'public',
+        ADD COLUMN IF NOT EXISTS show_online_status BOOLEAN DEFAULT TRUE,
+        ADD COLUMN IF NOT EXISTS allow_messages VARCHAR(20) DEFAULT 'everyone',
+        ADD COLUMN IF NOT EXISTS language VARCHAR(10) DEFAULT 'en',
+        ADD COLUMN IF NOT EXISTS date_format VARCHAR(20) DEFAULT 'DD/MM/YYYY',
+        ADD COLUMN IF NOT EXISTS currency VARCHAR(10) DEFAULT 'GHS',
+        ADD COLUMN IF NOT EXISTS timezone VARCHAR(50) DEFAULT 'UTC',
+        ADD COLUMN IF NOT EXISTS analytics_enabled BOOLEAN DEFAULT TRUE,
+        ADD COLUMN IF NOT EXISTS personalized_ads_enabled BOOLEAN DEFAULT TRUE;
+      `);
+            const { profileVisibility, showOnlineStatus, allowMessages, language, dateFormat, currency, timezone, isPrivate, readReceipts, allowDownloads, allowStorySharing, analytics, personalizedAds, } = req.body;
+            const updateFields = [];
+            const values = [];
+            let paramIndex = 1;
+            if (profileVisibility !== undefined) {
+                updateFields.push(`profile_visibility = $${paramIndex++}`);
+                values.push(profileVisibility);
+            }
+            if (showOnlineStatus !== undefined) {
+                updateFields.push(`show_online_status = $${paramIndex++}`);
+                values.push(showOnlineStatus);
+            }
+            if (allowMessages !== undefined) {
+                updateFields.push(`allow_messages = $${paramIndex++}`);
+                values.push(allowMessages);
+            }
+            if (language !== undefined) {
+                updateFields.push(`language = $${paramIndex++}`);
+                values.push(language);
+            }
+            if (dateFormat !== undefined) {
+                updateFields.push(`date_format = $${paramIndex++}`);
+                values.push(dateFormat);
+            }
+            if (currency !== undefined) {
+                updateFields.push(`currency = $${paramIndex++}`);
+                values.push(currency);
+            }
+            if (timezone !== undefined) {
+                updateFields.push(`timezone = $${paramIndex++}`);
+                values.push(timezone);
+            }
+            if (isPrivate !== undefined) {
+                updateFields.push(`is_private = $${paramIndex++}`);
+                values.push(isPrivate);
+            }
+            if (readReceipts !== undefined) {
+                updateFields.push(`read_receipts = $${paramIndex++}`);
+                values.push(readReceipts);
+            }
+            if (allowDownloads !== undefined) {
+                updateFields.push(`allow_downloads = $${paramIndex++}`);
+                values.push(allowDownloads);
+            }
+            if (allowStorySharing !== undefined) {
+                updateFields.push(`allow_story_sharing = $${paramIndex++}`);
+                values.push(allowStorySharing);
+            }
+            if (analytics !== undefined) {
+                updateFields.push(`analytics_enabled = $${paramIndex++}`);
+                values.push(analytics);
+            }
+            if (personalizedAds !== undefined) {
+                updateFields.push(`personalized_ads_enabled = $${paramIndex++}`);
+                values.push(personalizedAds);
+            }
+            if (updateFields.length === 0) {
+                return res.status(400).json({
+                    success: false,
+                    error: 'No fields to update'
+                });
+            }
+            updateFields.push(`updated_at = CURRENT_TIMESTAMP`);
+            values.push(userId);
+            await database_1.pgPool.query(`
+        UPDATE users
+        SET ${updateFields.join(', ')}
+        WHERE id = $${paramIndex}
+      `, values);
+            res.json({
+                success: true,
+                message: 'Settings updated successfully'
+            });
+        }
+        catch (error) {
+            console.error('Update User Settings Error:', error);
+            res.status(500).json({
+                success: false,
+                error: 'Failed to update user settings'
+            });
+        }
+    },
+    // Get notification preferences from MongoDB
+    getNotificationPreferences: async (req, res) => {
+        try {
+            const userId = req.user.id;
+            // Use findOneAndUpdate with upsert to avoid race condition
+            const preferences = await mongoose_1.NotificationPreference.findOneAndUpdate({ userId }, {
+                $setOnInsert: {
+                    userId,
+                    pushEnabled: true,
+                    likes: true,
+                    comments: true,
+                    follows: true,
+                    mentions: true,
+                    messages: true,
+                    events: true,
+                    sales: true,
+                    marketing: false,
+                    soundEnabled: true,
+                    vibrationEnabled: true,
+                }
+            }, { upsert: true, new: true });
+            res.json({
+                success: true,
+                preferences: {
+                    pushEnabled: preferences.pushEnabled,
+                    likes: preferences.likes,
+                    comments: preferences.comments,
+                    follows: preferences.follows,
+                    mentions: preferences.mentions,
+                    messages: preferences.messages,
+                    events: preferences.events,
+                    sales: preferences.sales,
+                    marketing: preferences.marketing,
+                    soundEnabled: preferences.soundEnabled,
+                    vibrationEnabled: preferences.vibrationEnabled,
+                }
+            });
+        }
+        catch (error) {
+            console.error('Get Notification Preferences Error:', error);
+            res.status(500).json({
+                success: false,
+                error: 'Failed to get notification preferences',
+                details: error instanceof Error ? error.message : String(error)
+            });
+        }
+    },
+    // Update notification preferences in MongoDB
+    updateNotificationPreferences: async (req, res) => {
+        try {
+            const userId = req.user.id;
+            let { preferences } = req.body;
+            console.log('📝 Raw request body:', req.body);
+            console.log('📝 Raw preferences:', preferences, 'type:', typeof preferences);
+            // Handle if preferences is stringified
+            if (typeof preferences === 'string') {
+                console.log('⚠️  Preferences is a string, attempting to parse');
+                try {
+                    preferences = JSON.parse(preferences);
+                }
+                catch (e) {
+                    console.error('❌ Failed to parse preferences string:', e);
+                    return res.status(400).json({
+                        success: false,
+                        error: 'Preferences must be a valid object'
+                    });
+                }
+            }
+            if (!preferences || typeof preferences !== 'object') {
+                console.error('❌ Preferences validation failed:', { preferences, type: typeof preferences });
+                return res.status(400).json({
+                    success: false,
+                    error: 'Preferences object is required'
+                });
+            }
+            // Valid preference keys
+            const validKeys = [
+                'pushEnabled', 'likes', 'comments', 'follows', 'mentions',
+                'messages', 'events', 'sales', 'marketing', 'soundEnabled', 'vibrationEnabled'
+            ];
+            // Create update object with only valid keys and boolean values
+            const updateData = {};
+            for (const key of validKeys) {
+                if (key in preferences && typeof preferences[key] === 'boolean') {
+                    updateData[key] = preferences[key];
+                }
+            }
+            console.log('🔄 Update data:', updateData);
+            if (Object.keys(updateData).length === 0) {
+                return res.status(400).json({
+                    success: false,
+                    error: 'No valid boolean preferences provided'
+                });
+            }
+            // Update preferences (create if doesn't exist)
+            const updatedPreferences = await mongoose_1.NotificationPreference.findOneAndUpdate({ userId }, updateData, { new: true, upsert: true });
+            console.log('✅ Preferences updated:', updatedPreferences);
+            res.json({
+                success: true,
+                message: 'Notification preferences updated successfully',
+                preferences: {
+                    pushEnabled: updatedPreferences.pushEnabled,
+                    likes: updatedPreferences.likes,
+                    comments: updatedPreferences.comments,
+                    follows: updatedPreferences.follows,
+                    mentions: updatedPreferences.mentions,
+                    messages: updatedPreferences.messages,
+                    events: updatedPreferences.events,
+                    sales: updatedPreferences.sales,
+                    marketing: updatedPreferences.marketing,
+                    soundEnabled: updatedPreferences.soundEnabled,
+                    vibrationEnabled: updatedPreferences.vibrationEnabled,
+                }
+            });
+        }
+        catch (error) {
+            console.error('❌ Update Notification Preferences Error:', error);
+            res.status(500).json({
+                success: false,
+                error: 'Failed to update notification preferences',
+                details: error instanceof Error ? error.message : String(error)
             });
         }
     },

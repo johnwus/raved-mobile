@@ -18,6 +18,7 @@ import { Avatar } from '../../components/ui/Avatar';
 import { ErrorState } from '../../components/ui/ErrorState';
 import { socketService } from '../../services/socket';
 import { useAuth } from '../../hooks/useAuth';
+import { usePresenceStore } from '../../store/presenceStore';
 
 interface Message {
   id: string;
@@ -42,7 +43,7 @@ interface ChatParticipant {
   avatarUrl: string;
 }
 
-export default function ChatDetailScreen() {
+export default function ChatDetailScreen(): React.JSX.Element {
   const router = useRouter();
   const { id } = useLocalSearchParams<{ id: string }>();
   const { user } = useAuth();
@@ -52,6 +53,8 @@ export default function ChatDetailScreen() {
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
   const scrollViewRef = useRef<ScrollView>(null);
+  const isOnline = usePresenceStore((s) => s.isUserOnline(chatParticipant?.id || ''));
+  const tempIdCounterRef = useRef(0);
 
   useEffect(() => {
     const fetchChatData = async () => {
@@ -88,27 +91,47 @@ export default function ChatDetailScreen() {
         }
 
         // Connect to socket and join chat room
-        await socketService.connect();
+        const socket = await socketService.connect();
+        console.log('[CHAT_DETAIL] Socket connected:', socket.connected, 'ID:', socket.id);
         socketService.joinChat(id);
+        console.log('[CHAT_DETAIL] Joined chat room:', id);
+        console.log('[CHAT_DETAIL] Socket is connected after join:', socketService.isConnected);
 
         // Listen for new messages
+        // eslint-disable-next-line sonarjs/cognitive-complexity
         socketService.onNewMessage((data: any) => {
+          console.log('[CHAT_DETAIL] Received socket message:', data);
+          console.log('[CHAT_DETAIL] Current chat ID:', id, 'Message conversationId:', data.conversationId);
           if (data.conversationId === id) {
-            setMessages(prev => [...prev, {
-              id: data.id,
-              conversationId: data.conversationId,
-              sender: {
-                id: data.sender?.id || '',
-                username: data.sender?.username || data.sender?.name || '',
-                name: data.sender?.name || '',
-                avatarUrl: data.sender?.avatarUrl || data.sender?.avatar || '',
-              },
-              content: data.content,
-              type: data.type,
-              isRead: data.isRead,
-              createdAt: data.createdAt,
-              timeAgo: data.timeAgo
-            }]);
+            console.log('[CHAT_DETAIL] Message belongs to current chat, adding...');
+            // Check if this message is already in the list (avoid duplicates from optimistic updates)
+            setMessages(prev => {
+              const messageExists = prev.some(msg => msg.id === data.id);
+              console.log('[CHAT_DETAIL] Message exists:', messageExists, 'Message ID:', data.id);
+              if (messageExists) {
+                console.log('[CHAT_DETAIL] Skipping duplicate message');
+                return prev; // Don't add duplicate
+              }
+
+              console.log('[CHAT_DETAIL] Adding new message from socket');
+              return [...prev, {
+                id: data.id,
+                conversationId: data.conversationId,
+                sender: {
+                  id: data.sender?.id || '',
+                  username: data.sender?.username || data.sender?.name || '',
+                  name: data.sender?.name || '',
+                  avatarUrl: data.sender?.avatarUrl || data.sender?.avatar || '',
+                },
+                content: data.content,
+                type: data.type,
+                isRead: data.isRead,
+                createdAt: data.createdAt,
+                timeAgo: data.timeAgo
+              }];
+            });
+          } else {
+            console.log('[CHAT_DETAIL] Message does not belong to current chat');
           }
         });
       } catch (error) {
@@ -125,6 +148,8 @@ export default function ChatDetailScreen() {
       if (id) {
         socketService.leaveChat(id);
       }
+      // Clean up socket listeners to prevent duplicates
+      socketService.off('new_message');
     };
   }, [id, user]);
 
@@ -141,17 +166,22 @@ export default function ChatDetailScreen() {
     const messageText = message.trim();
     setMessage('');
     setSending(true);
+    
+    // Generate truly unique temp ID using counter + random + timestamp
+    tempIdCounterRef.current += 1;
+    const tempId = `temp_${user?.id}_${tempIdCounterRef.current}_${Math.random().toString(36).substring(2, 9)}_${Date.now()}`;
+    console.log(`[CHAT_DETAIL] Generated temp ID: ${tempId} (counter=${tempIdCounterRef.current})`);
 
     try {
       const chatApi = (await import('../../services/chatApi')).default;
       
       // Add optimistic message
       const tempMessage: Message = {
-        id: `temp_${Date.now()}`,
+        id: tempId,
         conversationId: id,
         sender: {
           id: user?.id || '',
-          username: user?.username || (user?.name || 'you').toLowerCase().replace(/\s+/g, ''),
+          username: user?.username || (user?.name || 'you').toLowerCase().replaceAll(/\s+/g, ''),
           name: user?.name || 'You',
           avatarUrl: user?.avatar || '',
         },
@@ -161,41 +191,27 @@ export default function ChatDetailScreen() {
         createdAt: new Date().toISOString(),
         timeAgo: 'now',
       };
+      console.log(`[CHAT_DETAIL] Adding temp message: ${tempId}`);
+      // eslint-disable-next-line sonarjs/cognitive-complexity
       setMessages(prev => [...prev, tempMessage]);
 
       // Send message using chatApi
       const response = await chatApi.sendMessage(id, messageText, 'text');
       if (response.success && response.message) {
-        // Replace temp message with real one (map to local Message shape)
-        setMessages(prev => prev.map(m => 
-          m.id.startsWith('temp_') && m.content === messageText 
-            ? ({
-                id: response.message.id,
-                conversationId: response.message.conversationId,
-                sender: {
-                  id: response.message.sender?.id || '',
-                  username: (response.message.sender?.name || '').toLowerCase().replace(/\s+/g, ''),
-                  name: response.message.sender?.name || '',
-                  avatarUrl: response.message.sender?.avatar || '',
-                },
-                content: response.message.content,
-                type: response.message.type,
-                isRead: response.message.isRead,
-                createdAt: response.message.createdAt,
-                timeAgo: response.message.timeAgo,
-              }) as Message
-            : m
-        ));
+        console.log(`[CHAT_DETAIL] Received real message: ${response.message.id}, removing temp: ${tempId}`);
+        // Remove temp message and let socket handle adding the real message
+        setMessages(prev => prev.filter(m => m.id !== tempId));
+        // The real message will be added by the socket listener
       } else {
-        // Remove optimistic message on error
-        setMessages(prev => prev.filter(m => !m.id.startsWith('temp_')));
+        // Remove optimistic message on error using tempId
+        setMessages(prev => prev.filter(m => m.id !== tempId));
         setMessage(messageText); // Restore message text
         Alert.alert('Error', 'Failed to send message');
       }
     } catch (error) {
       console.error('Failed to send message:', error);
-      // Remove optimistic message on error
-      setMessages(prev => prev.filter(m => !m.id.startsWith('temp_')));
+      // Remove optimistic message on error using tempId
+      setMessages(prev => prev.filter(m => m.id !== tempId));
       setMessage(messageText); // Restore message text
       Alert.alert('Error', 'Failed to send message. Please try again.');
     } finally {
@@ -241,11 +257,11 @@ export default function ChatDetailScreen() {
             </TouchableOpacity>
             <View style={styles.avatarContainer}>
               <Avatar uri={chatParticipant.avatarUrl || ''} size={48} />
-              <View style={[styles.statusDot, styles.statusDotOffline]} />
+              <View style={[styles.statusDot, isOnline ? styles.statusDotOnline : styles.statusDotOffline]} />
             </View>
             <View style={styles.userInfo}>
               <Text style={styles.userName}>{chatParticipant.name}</Text>
-              <Text style={styles.userStatus}>Offline</Text>
+              <Text style={styles.userStatus}>{isOnline ? 'Online' : 'Offline'}</Text>
             </View>
           </View>
           <TouchableOpacity

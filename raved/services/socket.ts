@@ -19,8 +19,8 @@ class SocketService {
     // iOS Simulator: 'http://localhost:3000'
     // Android Emulator: 'http://10.0.2.2:3000'
     // Physical Device: Your computer's IP (e.g., 'http://192.168.1.100:3000')
-    const socketUrl = __DEV__ 
-      ? (process.env.EXPO_PUBLIC_API_URL || 'http://localhost:3000')
+    const socketUrl = __DEV__
+      ? (process.env.EXPO_PUBLIC_API_URL || 'http://192.168.100.28:3000') //'http://10.187.133.169:3000' ) //'http://192.168.100.28:3000')
       : 'https://api.raved.com';
     console.log('Socket connecting to URL:', socketUrl);
 
@@ -155,7 +155,38 @@ class SocketService {
   }
 
   onNewMessage(callback: (data: any) => void) {
-    this.socket?.on('new_message', callback);
+    this.socket?.on('new_message', (data) => {
+      console.log('[SocketService] Received new_message event:', data);
+      callback(data);
+    });
+  }
+
+  onConversationUpdated(callback: (data: any) => void) {
+    this.socket?.on('conversation_updated', (data) => {
+      console.log('[SocketService] Received conversation_updated event:', data);
+      callback(data);
+    });
+  }
+
+  onUserOnline(callback: (data: { userId: string; username: string; timestamp: Date }) => void) {
+    this.socket?.on('user_online', (data) => {
+      console.log('[SocketService] Received user_online event:', data);
+      callback(data);
+    });
+  }
+
+  onUserOffline(callback: (data: { userId: string; username: string; timestamp: Date }) => void) {
+    this.socket?.on('user_offline', (data) => {
+      console.log('[SocketService] Received user_offline event:', data);
+      callback(data);
+    });
+  }
+
+  onUsersOnlineList(callback: (data: Array<{ userId: string; username: string; timestamp: Date }>) => void) {
+    this.socket?.on('users_online_list', (data) => {
+      console.log('[SocketService] Received users_online_list event:', data);
+      callback(data);
+    });
   }
 
   onTypingStart(callback: (data: { userId: string; username: string; chatId: string }) => void) {

@@ -1,22 +1,23 @@
 import { Router, Request, Response } from 'express';
 import { body } from 'express-validator';
 import { authenticate } from '../middleware/auth.middleware';
+import { interactionRateLimit } from '../middleware/rate-limit.middleware';
 import { connectionController } from '../controllers/connection.controller';
 import { connectionsController } from '../controllers/connections.controller';
 
 const router = Router();
 
 // Send follow request
-router.post('/follow/:userId', authenticate, connectionController.sendFollowRequest);
+router.post('/follow/:userId', authenticate, interactionRateLimit, connectionController.sendFollowRequest);
 
 // Get pending follow requests
 router.get('/requests', authenticate, connectionController.getPendingFollowRequests);
 
 // Approve follow request
-router.post('/requests/:requestId/approve', authenticate, connectionController.approveFollowRequest);
+router.post('/requests/:requestId/approve', authenticate, interactionRateLimit, connectionController.approveFollowRequest);
 
 // Reject follow request
-router.post('/requests/:requestId/reject', authenticate, connectionController.rejectFollowRequest);
+router.post('/requests/:requestId/reject', authenticate, interactionRateLimit, connectionController.rejectFollowRequest);
 
 // Block user
 router.post('/block/:userId', authenticate, connectionController.blockUser);

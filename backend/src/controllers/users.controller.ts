@@ -1,7 +1,19 @@
 import { Request, Response } from 'express';
 import { pgPool } from '../config/database';
-import { Post, Comment, Like } from '../models/mongoose';
+import { Post, Comment, Like, NotificationPreference } from '../models/mongoose';
 import { getTimeAgo } from '../utils';
+
+// Helper function to get media URL based on post type
+function getMediaUrl(post: any): string | null {
+    if (post.type === 'image') {
+        return post.media?.image || null;
+    } else if (post.type === 'video') {
+        return post.media?.video || null;
+    } else if (post.type === 'carousel' && post.media?.images && post.media.images.length > 0) {
+        return post.media.images[0]; // Use first image as primary URL
+    }
+    return null;
+}
 
 export const usersController = {
   // Get user profile
@@ -303,7 +315,7 @@ export const usersController = {
         caption: post.caption || '',
         media: {
           type: post.type,
-          url: post.media?.image || post.media?.video,
+          url: getMediaUrl(post),
           thumbnail: post.media?.thumbnail,
           items: post.media?.images || []
         },
@@ -442,7 +454,7 @@ export const usersController = {
         caption: post.caption || '',
         media: {
           type: post.type,
-          url: post.media?.image || post.media?.video,
+          url: getMediaUrl(post),
           thumbnail: post.media?.thumbnail,
           items: post.media?.images || []
         },
@@ -525,7 +537,7 @@ export const usersController = {
         caption: post.caption || '',
         media: {
           type: post.type,
-          url: post.media?.image || post.media?.video,
+          url: getMediaUrl(post),
           thumbnail: post.media?.thumbnail,
           items: post.media?.images || []
         },
@@ -914,6 +926,151 @@ export const usersController = {
       res.status(500).json({
         success: false,
         error: 'Failed to update user settings'
+      });
+    }
+  },
+
+  // Get notification preferences from MongoDB
+  getNotificationPreferences: async (req: Request, res: Response) => {
+    try {
+      const userId = req.user.id;
+
+      // Use findOneAndUpdate with upsert to avoid race condition
+      const preferences = await NotificationPreference.findOneAndUpdate(
+        { userId },
+        {
+          $setOnInsert: {
+            userId,
+            pushEnabled: true,
+            likes: true,
+            comments: true,
+            follows: true,
+            mentions: true,
+            messages: true,
+            events: true,
+            sales: true,
+            marketing: false,
+            soundEnabled: true,
+            vibrationEnabled: true,
+          }
+        },
+        { upsert: true, new: true }
+      );
+
+      res.json({
+        success: true,
+        preferences: {
+          pushEnabled: preferences.pushEnabled,
+          likes: preferences.likes,
+          comments: preferences.comments,
+          follows: preferences.follows,
+          mentions: preferences.mentions,
+          messages: preferences.messages,
+          events: preferences.events,
+          sales: preferences.sales,
+          marketing: preferences.marketing,
+          soundEnabled: preferences.soundEnabled,
+          vibrationEnabled: preferences.vibrationEnabled,
+        }
+      });
+
+    } catch (error) {
+      console.error('Get Notification Preferences Error:', error);
+      res.status(500).json({ 
+        success: false,
+        error: 'Failed to get notification preferences',
+        details: error instanceof Error ? error.message : String(error)
+      });
+    }
+  },
+
+  // Update notification preferences in MongoDB
+  updateNotificationPreferences: async (req: Request, res: Response) => {
+    try {
+      const userId = req.user.id;
+      let { preferences } = req.body;
+
+      console.log('📝 Raw request body:', req.body);
+      console.log('📝 Raw preferences:', preferences, 'type:', typeof preferences);
+
+      // Handle if preferences is stringified
+      if (typeof preferences === 'string') {
+        console.log('⚠️  Preferences is a string, attempting to parse');
+        try {
+          preferences = JSON.parse(preferences);
+        } catch (e) {
+          console.error('❌ Failed to parse preferences string:', e);
+          return res.status(400).json({
+            success: false,
+            error: 'Preferences must be a valid object'
+          });
+        }
+      }
+
+      if (!preferences || typeof preferences !== 'object') {
+        console.error('❌ Preferences validation failed:', { preferences, type: typeof preferences });
+        return res.status(400).json({
+          success: false,
+          error: 'Preferences object is required'
+        });
+      }
+
+      // Valid preference keys
+      const validKeys = [
+        'pushEnabled', 'likes', 'comments', 'follows', 'mentions',
+        'messages', 'events', 'sales', 'marketing', 'soundEnabled', 'vibrationEnabled'
+      ];
+
+      // Create update object with only valid keys and boolean values
+      const updateData: any = {};
+      for (const key of validKeys) {
+        if (key in preferences && typeof preferences[key] === 'boolean') {
+          updateData[key] = preferences[key];
+        }
+      }
+
+      console.log('🔄 Update data:', updateData);
+
+      if (Object.keys(updateData).length === 0) {
+        return res.status(400).json({
+          success: false,
+          error: 'No valid boolean preferences provided'
+        });
+      }
+
+      // Update preferences (create if doesn't exist)
+      const updatedPreferences = await NotificationPreference.findOneAndUpdate(
+        { userId },
+        updateData,
+        { new: true, upsert: true }
+      );
+
+      console.log('✅ Preferences updated:', updatedPreferences);
+
+      res.json({
+        success: true,
+        message: 'Notification preferences updated successfully',
+        preferences: {
+          pushEnabled: updatedPreferences.pushEnabled,
+          likes: updatedPreferences.likes,
+          comments: updatedPreferences.comments,
+          follows: updatedPreferences.follows,
+          mentions: updatedPreferences.mentions,
+          messages: updatedPreferences.messages,
+          events: updatedPreferences.events,
+          sales: updatedPreferences.sales,
+          marketing: updatedPreferences.marketing,
+          soundEnabled: updatedPreferences.soundEnabled,
+          vibrationEnabled: updatedPreferences.vibrationEnabled,
+        }
+      });
+
+    } catch (error) {
+      console.error('❌ Update Notification Preferences Error:', error);
+      res.status(500).json({ 
+        success: false,
+        error: 'Failed to update notification preferences',
+        details: error instanceof Error ? error.message : String(error)
       });
     }
   },
