@@ -15,8 +15,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { theme } from '../theme';
 import { Avatar } from '../components/ui/Avatar';
 import { EmptyState } from '../components/ui/EmptyState';
-import api from '../services/api';
-import socketService from '../services/socket';
+import chatApi from '../services/chatApi';
 import { useAuth } from '../hooks/useAuth';
 
 interface Chat {
@@ -47,17 +46,30 @@ export default function ChatScreen() {
   useEffect(() => {
     const fetchChats = async () => {
       try {
-        const response = await api.get('/chats');
-        setChats(response.data.chats);
+        const response = await chatApi.getChats();
+        if (response.success && response.chats) {
+          // Transform backend format to frontend format
+          const transformedChats = response.chats.map((chat: any) => ({
+            id: chat.id,
+            otherParticipant: chat.participants?.find((p: any) => p.id !== user?.id) || chat.otherParticipant || {
+              id: '',
+              username: '',
+              name: 'Unknown',
+              avatarUrl: '',
+            },
+            lastMessage: chat.lastMessage ? {
+              content: chat.lastMessage.content,
+              timeAgo: chat.lastMessage.timeAgo || '',
+              createdAt: chat.lastMessage.createdAt,
+            } : null,
+            unreadCount: chat.unreadCount || 0,
+            createdAt: chat.createdAt || '',
+            lastMessageAt: chat.lastMessageAt || null,
+          }));
+          setChats(transformedChats);
+        }
       } catch (error) {
         console.error('Failed to fetch chats:', error);
-        // If /chats fails, try /chat
-        try {
-          const fallbackResponse = await api.get('/chat');
-          setChats(fallbackResponse.data.chats || fallbackResponse.data);
-        } catch (fallbackError) {
-          console.error('Fallback fetch also failed:', fallbackError);
-        }
       } finally {
         setLoading(false);
       }

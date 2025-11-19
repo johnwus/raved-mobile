@@ -179,10 +179,22 @@ export const chatService = {
       console.warn('Failed to send message notification:', notificationError);
     }
 
+    // Get sender details
+    const senderResult = await pgPool.query(
+      'SELECT id, username, first_name, last_name, avatar_url FROM users WHERE id = $1',
+      [senderId]
+    );
+    const sender = senderResult.rows[0];
+
     return {
-      id: message._id,
+      id: message._id.toString(),
       conversationId,
-      senderId,
+      sender: {
+        id: sender.id,
+        username: sender.username,
+        name: `${sender.first_name} ${sender.last_name}`,
+        avatar: getAvatarUrl(sender.avatar_url, sender.id)
+      },
       content,
       type,
       isRead: message.isRead,
